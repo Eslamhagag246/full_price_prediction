@@ -11,7 +11,7 @@ import warnings
 warnings.filterwarnings('ignore')
 
 
-def load_and_preprocess_data(filepath='final_project/full_price_prediction/mobile_model.py'):
+def load_and_preprocess_data(filepath='mobile_cleaned_70K.csv'):
     df = pd.read_csv(filepath)
 
     df['price'] = df['price'].astype(str)
@@ -183,11 +183,54 @@ def forecast_product(pdf, days_ahead=7):
 
     forecast_dates = [last_date + timedelta(days=i+1) for i in range(days_ahead)]
 
-    return {
-        "forecast_dates": forecast_dates,
-        "forecast_prices": forecasts,
-        "model_type": "Multiple Linear Regression"
-    }
+    y_pred = model.predict(X)
+mae = mean_absolute_error(y, y_pred)
+r2 = r2_score(y, y_pred)
+
+n = len(pdf)
+
+if n >= 30:
+    confidence = "High"
+elif n >= 15:
+    confidence = "Medium"
+else:
+    confidence = "Low"
+
+last_price = float(pdf['price'].iloc[-1])
+future_price = forecasts[-1]
+trend_pct = ((future_price - last_price) / last_price) * 100
+
+if trend_pct < -3:
+    signal = "buy"
+    signal_text = "💰 Buy Opportunity"
+    signal_desc = "Price expected to drop"
+elif trend_pct > 3:
+    signal = "wait"
+    signal_text = "⏳ Wait Before Buying"
+    signal_desc = "Price expected to rise"
+else:
+    signal = "neutral"
+    signal_text = "📊 Stable Price"
+    signal_desc = "Price expected to stay stable"
+
+return {
+    'pdf': pdf,
+    'forecast_dates': forecast_dates,
+    'forecast_prices': np.array(forecasts),
+    'mae': mae,
+    'r2': r2,
+    'last_price': last_price,
+    'avg_price': float(pdf['price'].mean()),
+    'min_price': float(pdf['price'].min()),
+    'max_price': float(pdf['price'].max()),
+    'n_obs': n,
+    'confidence': confidence,
+    'signal': signal,
+    'signal_text': signal_text,
+    'signal_desc': signal_desc,
+    'trend_pct': trend_pct,
+    'model_type': 'Multiple Linear Regression'
+}
 
 def evaluate_model_on_all_products(filepath, min_obs=10):
 
