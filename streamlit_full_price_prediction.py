@@ -176,7 +176,7 @@ def create_forecast_chart(result, device_type="tablet"):
 
     # Rolling average
     fig.add_trace(go.Scatter(
-        x=pdf['date'], y=pdf['rolling_avg'],
+        x=pdf['date'], y=pdf['rolling_avg_3'],
         mode='lines', name='3-day Avg',
         line=dict(color=colors['secondary'], width=1.5, dash='dot'),
         hovertemplate='%{x}<br>Avg EGP %{y:,.0f}<extra></extra>'
@@ -282,7 +282,7 @@ with st.sidebar:
         df = load_mobile_data()
         forecast_func = forecast_mobile
         device_key = "mobile"
-        data_file = "mobile_phones_cleaned.csv"
+        data_file = "mobile_cleaned_70K.csv"
     
     if df is not None:
         last_update = pd.to_datetime(df['date'].max()).strftime('%B %d, %Y')
