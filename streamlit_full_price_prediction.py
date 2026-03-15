@@ -157,6 +157,7 @@ section[data-testid="stSidebar"] .stRadio label:hover {
 
 @st.cache_data(ttl=3600)
 def load_data(device_type):
+    """Load data based on device type"""
     if device_type == "Tablets":
         filepath = 'tablets_cleaned_continuous.csv'
     else:
@@ -175,6 +176,7 @@ def load_data(device_type):
 
 
 def create_forecast_chart(result, device_type):
+    """Create beautiful forecast chart"""
     pdf = result['pdf']
     forecast_dates = result['forecast_dates']
     forecast_prices = result['forecast_prices']
@@ -253,8 +255,10 @@ def create_forecast_chart(result, device_type):
     
     # Today marker
     today = pd.Timestamp.today().normalize()
+    today_str = today.strftime('%Y-%m-%d')  # Convert to string
+    
     fig.add_vline(
-        x=today,
+        x=today_str,  # Use string instead of Timestamp
         line_dash="dot",
         line_color="gray",
         opacity=0.5,
