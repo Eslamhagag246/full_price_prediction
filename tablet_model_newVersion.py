@@ -74,10 +74,11 @@ def engineer_features(pdf):
     pdf['price_lag_1'] = pdf['price'].shift(1)
     pdf['price_lag_3'] = pdf['price'].shift(3)
     pdf['price_lag_7'] = pdf['price'].shift(7)
-    pdf = pdf.dropna()
+    
     pdf['pct_change_1'] = pdf['price'].pct_change().fillna(0)
     pdf['pct_change_3'] = pdf['price'].pct_change(3).fillna(0)
-
+    pdf = pdf.dropna()
+    
     pdf['ram_normalized'] = pdf['ram_gb'] / 16.0
     pdf['storage_normalized'] = pdf['storage_gb'] / 1024.0
     pdf['specs_score'] = (pdf['ram_gb'] / 4.0) + (pdf['storage_gb'] / 128.0)
