@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 from datetime import timedelta
+import os
 
 # ═══════════════════════════════════════════════════════════
 # PAGE CONFIG
@@ -15,14 +16,41 @@ st.set_page_config(
 )
 
 # ═══════════════════════════════════════════════════════════
-# IMPORT MODEL
+# IMPORT MODELS
 # ═══════════════════════════════════════════════════════════
+MODELS_LOADED = {'tablet': False, 'mobile': False}
+tablet_model = None
+mobile_model = None
+
 try:
-    from tablet_model import load_and_preprocess_data, engineer_features, forecast_product
-    MODEL_IMPORTED = True
+    from tablet_model_newVersion import (
+        load_and_preprocess_data as load_tablet_data_func,
+        forecast_product as forecast_tablet_func,
+        load_global_model as load_tablet_model
+    )
+    # Try to load pre-trained model
+    try:
+        tablet_model = load_tablet_model()
+        MODELS_LOADED['tablet'] = True
+    except:
+        st.sidebar.warning("⚠️ Tablet model not trained yet")
 except ImportError as e:
-    st.error(f"❌ Error importing tablet_model.py: {str(e)}")
-    st.stop()
+    st.error(f"❌ Error importing tablet_model_newVersion.py: {str(e)}")
+
+try:
+    from mobile_model_newVersion import (
+        load_and_preprocess_data as load_mobile_data_func,
+        forecast_product as forecast_mobile_func,
+        load_global_model as load_mobile_model
+    )
+    # Try to load pre-trained model
+    try:
+        mobile_model = load_mobile_model()
+        MODELS_LOADED['mobile'] = True
+    except:
+        st.sidebar.warning("⚠️ Mobile model not trained yet")
+except ImportError as e:
+    st.error(f"❌ Error importing mobile_model_newVersion.py: {str(e)}")
 
 # ═══════════════════════════════════════════════════════════
 # CUSTOM CSS
@@ -31,13 +59,8 @@ st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
-* {
-    font-family: 'Inter', sans-serif;
-}
-
-.stApp {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-}
+* { font-family: 'Inter', sans-serif; }
+.stApp { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
 
 .main .block-container {
     background: white;
@@ -83,7 +106,6 @@ div[data-testid="stMetricValue"] {
     box-shadow: 0 10px 20px rgba(102, 126, 234, 0.4);
 }
 
-/* Sidebar */
 section[data-testid="stSidebar"] {
     background: linear-gradient(180deg, #667eea 0%, #764ba2 100%);
 }
@@ -92,20 +114,6 @@ section[data-testid="stSidebar"] * {
     color: white !important;
 }
 
-section[data-testid="stSidebar"] .stRadio label {
-    background: rgba(255,255,255,0.1);
-    padding: 0.8rem;
-    border-radius: 10px;
-    margin: 0.3rem 0;
-    cursor: pointer;
-    transition: all 0.3s;
-}
-
-section[data-testid="stSidebar"] .stRadio label:hover {
-    background: rgba(255,255,255,0.2);
-}
-
-/* Device type badge */
 .device-badge {
     display: inline-block;
     padding: 0.3rem 0.8rem;
@@ -125,7 +133,6 @@ section[data-testid="stSidebar"] .stRadio label:hover {
     color: white;
 }
 
-/* Stats cards */
 .stat-card {
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     color: white;
@@ -160,15 +167,16 @@ def load_data(device_type):
     """Load data based on device type"""
     if device_type == "Tablets":
         filepath = 'tablets_cleaned_continuous.csv'
+        load_func = load_tablet_data_func
     else:
         filepath = 'mobile_cleaned_70K.csv'
+        load_func = load_mobile_data_func
     
     try:
-        df = load_and_preprocess_data(filepath)
+        df = load_func(filepath)
         return df, filepath
     except FileNotFoundError:
         st.error(f"❌ File not found: {filepath}")
-        st.info("Please ensure the CSV file is in the same directory as this app.")
         return None, filepath
     except Exception as e:
         st.error(f"❌ Error loading data: {str(e)}")
@@ -182,7 +190,7 @@ def create_forecast_chart(result, device_type):
     forecast_prices = result['forecast_prices']
     mae = result['mae']
     
-    # Colors based on device type
+    # Colors
     if device_type == "Tablets":
         color_main = '#667eea'
         color_forecast = '#f093fb'
@@ -204,17 +212,18 @@ def create_forecast_chart(result, device_type):
     ))
     
     # Rolling average
-    fig.add_trace(go.Scatter(
-        x=pdf['date'],
-        y=pdf['rolling_avg_7'],
-        mode='lines',
-        name='7-Day Average',
-        line=dict(color=color_main, width=2, dash='dot'),
-        opacity=0.6,
-        hovertemplate='<b>%{x}</b><br>Avg: EGP %{y:,.0f}<extra></extra>'
-    ))
+    if 'rolling_avg_7' in pdf.columns:
+        fig.add_trace(go.Scatter(
+            x=pdf['date'],
+            y=pdf['rolling_avg_7'],
+            mode='lines',
+            name='7-Day Average',
+            line=dict(color=color_main, width=2, dash='dot'),
+            opacity=0.6,
+            hovertemplate='<b>%{x}</b><br>Avg: EGP %{y:,.0f}<extra></extra>'
+        ))
     
-    # Connection line to forecast
+    # Connection to forecast
     last_hist_date = pdf['date'].iloc[-1]
     last_hist_price = pdf['price'].iloc[-1]
     
@@ -246,7 +255,7 @@ def create_forecast_chart(result, device_type):
         x=forecast_dates + forecast_dates[::-1],
         y=upper + lower[::-1],
         fill='toself',
-        fillcolor=f'rgba({int(color_forecast[1:3], 16)}, {int(color_forecast[3:5], 16)}, {int(color_forecast[5:7], 16)}, 0.2)',
+        fillcolor=f'rgba(240, 147, 251, 0.2)',
         line=dict(color='rgba(255,255,255,0)'),
         name='Confidence Interval',
         showlegend=True,
@@ -255,15 +264,23 @@ def create_forecast_chart(result, device_type):
     
     # Today marker
     today = pd.Timestamp.today().normalize()
-    today_str = today.strftime('%Y-%m-%d')  # Convert to string
+    today_str = today.strftime('%Y-%m-%d')
     
-    fig.add_vline(
-        x=today_str,  # Use string instead of Timestamp
-        line_dash="dot",
-        line_color="gray",
-        opacity=0.5,
-        annotation_text="Today",
-        annotation_position="top"
+    fig.add_shape(
+        type="line",
+        x0=today_str, x1=today_str,
+        y0=0, y1=1,
+        yref='paper',
+        line=dict(color="gray", width=2, dash="dot")
+    )
+    
+    fig.add_annotation(
+        x=today_str, y=1,
+        yref='paper',
+        text="Today",
+        showarrow=False,
+        font=dict(color="gray", size=11),
+        yshift=10
     )
     
     # Layout
@@ -302,13 +319,12 @@ def create_forecast_chart(result, device_type):
 # MAIN APP
 # ═══════════════════════════════════════════════════════════
 
-# Header
 st.title("📱 Price Tracker Pro")
 st.markdown("**Track & Forecast Prices for Tablets & Mobile Phones**")
 st.markdown("---")
 
 # ═══════════════════════════════════════════════════════════
-# SIDEBAR - DEVICE SELECTION
+# SIDEBAR
 # ═══════════════════════════════════════════════════════════
 
 with st.sidebar:
@@ -322,6 +338,17 @@ with st.sidebar:
     )
     
     st.markdown("---")
+    
+    # Check if model is loaded
+    model_key = 'tablet' if device_type == "Tablets" else 'mobile'
+    
+    if MODELS_LOADED[model_key]:
+        st.success(f"✅ {device_type} model loaded")
+    else:
+        st.error(f"❌ {device_type} model not found")
+        st.info("Please train the model first by running the model file")
+        st.code(f"python {'tablet' if model_key == 'tablet' else 'mobile'}_model_newVersion.py")
+        st.stop()
     
     # Load data
     df, filepath = load_data(device_type)
@@ -341,10 +368,9 @@ with st.sidebar:
     
     Data file: `{filepath}`
     
-    Machine Learning Model: **Multiple Linear Regression**
+    Model: **Global Linear Regression**
     """)
 
-# Stop if data failed to load
 if df is None:
     st.stop()
 
@@ -354,20 +380,18 @@ if df is None:
 
 st.markdown("### 🔍 Search & Filter Products")
 
-# Search box
 search_term = st.text_input(
     "🔎 Search by product name",
     placeholder="e.g., iPad, Galaxy, iPhone...",
     help="Search for products by name"
 )
 
-# Apply search filter
 if search_term:
     filtered_df = df[df['name'].str.contains(search_term, case=False, na=False)]
 else:
     filtered_df = df.copy()
 
-# Multi-select filters in columns
+# Filters
 col1, col2, col3, col4 = st.columns(4)
 
 with col1:
@@ -396,7 +420,7 @@ if selected_rams:
 if selected_storages:
     filtered_df = filtered_df[filtered_df['storage_gb'].isin(selected_storages)]
 
-# Show active filters
+# Active filters
 active_filters = []
 if search_term:
     active_filters.append(f"Search: {search_term}")
@@ -421,10 +445,9 @@ st.markdown("---")
 # ═══════════════════════════════════════════════════════════
 
 if filtered_df.empty:
-    st.warning("⚠️ No products found with current filters. Try adjusting your search.")
+    st.warning("⚠️ No products found. Try different filters.")
     st.stop()
 
-# Get unique products
 product_groups = filtered_df.groupby('product_key').agg({
     'name': 'first',
     'brand': 'first',
@@ -439,7 +462,6 @@ product_groups = product_groups.sort_values('n_obs', ascending=False)
 
 st.markdown(f"**Found {len(product_groups)} products**")
 
-# Product selector
 selected_product = st.selectbox(
     f"📱 Select a {device_type[:-1].lower()}",
     options=product_groups['product_key'].tolist(),
@@ -454,16 +476,14 @@ selected_product = st.selectbox(
 )
 
 # ═══════════════════════════════════════════════════════════
-# FORECAST & DISPLAY
+# FORECAST
 # ═══════════════════════════════════════════════════════════
 
 st.markdown("---")
 
-# Get product data
 product_df = df[df['product_key'] == selected_product].copy()
 product_info = product_groups[product_groups['product_key'] == selected_product].iloc[0]
 
-# Display product header
 col1, col2 = st.columns([3, 1])
 with col1:
     st.markdown(f"## 📱 {product_info['name']}")
@@ -471,7 +491,7 @@ with col2:
     badge_class = 'badge-tablet' if device_type == "Tablets" else 'badge-mobile'
     st.markdown(f'<span class="device-badge {badge_class}">{device_type[:-1]}</span>', unsafe_allow_html=True)
 
-# Product specs
+# Specs
 spec_col1, spec_col2, spec_col3, spec_col4 = st.columns(4)
 spec_col1.metric("🏷️ Brand", product_info['brand'].title())
 spec_col2.metric("💾 RAM", f"{product_info['ram_gb']}GB")
@@ -483,13 +503,17 @@ st.markdown("---")
 # Generate forecast
 with st.spinner("🤖 Generating AI forecast..."):
     try:
-        result = forecast_product(product_df, days_ahead=7)
+        # Use appropriate model and function
+        if device_type == "Tablets":
+            result = forecast_tablet_func(product_df, days_ahead=7, model=tablet_model)
+        else:
+            result = forecast_mobile_func(product_df, days_ahead=7, model=mobile_model)
     except Exception as e:
         st.error(f"❌ Error generating forecast: {str(e)}")
         st.code(str(e))
         st.stop()
 
-# Display current stats
+# Stats
 stat_col1, stat_col2, stat_col3, stat_col4 = st.columns(4)
 
 with stat_col1:
@@ -545,7 +569,7 @@ forecast_table = pd.DataFrame({
 
 st.dataframe(forecast_table, use_container_width=True, hide_index=True)
 
-# Additional stats
+# Stats
 st.markdown("---")
 st.markdown("### 📊 Price Statistics")
 
@@ -555,7 +579,7 @@ stats_col2.metric("📊 Average Price", f"EGP {result['avg_price']:,.0f}")
 stats_col3.metric("📈 Maximum Price", f"EGP {result['max_price']:,.0f}")
 stats_col4.metric("🎯 Model Accuracy (MAE)", f"±{result['mae']:,.0f} EGP")
 
-# Product URL
+# URL
 if 'URL' in product_df.columns:
     url = product_df['URL'].iloc[-1]
     if url and str(url) != 'nan':
@@ -565,7 +589,7 @@ if 'URL' in product_df.columns:
 st.markdown("---")
 st.markdown("""
 <div style='text-align: center; color: #718096; font-size: 0.9rem; padding: 1rem;'>
-    <p>📱 Price Tracker Pro - Powered by Machine Learning</p>
-    <p>Model: Multiple Linear Regression | Forecasting: 7 Days Ahead</p>
+    <p>📱 Price Tracker Pro - Powered by Global Linear Regression</p>
+    <p>One model trained on ALL products for better generalization</p>
 </div>
 """, unsafe_allow_html=True)
