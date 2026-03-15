@@ -239,7 +239,8 @@ def forecast_product(pdf, days_ahead=7, model=None):
             pdf['specs_score'].iloc[-1]
         ]]
 
-        pred = model.predict(row)[0]
+        row_df = pd.DataFrame(row, columns=FEATURE_COLS)
+        pred = model.predict(row_df)[0]
 
         forecasts.append(pred)
         history_prices.append(pred)
