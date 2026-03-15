@@ -246,7 +246,8 @@ def forecast_product(pdf, days_ahead=7, model=None):
             pdf['specs_score'].iloc[-1]
         ]]
 
-        pred = model.predict(row)[0]
+        row_df = pd.DataFrame(row, columns=FEATURE_COLS)
+        pred = model.predict(row_df)[0]
 
         forecasts.append(pred)
         history_prices.append(pred)
@@ -340,10 +341,7 @@ def load_and_preprocess_data(filepath='tablets_cleaned_continuous.csv'):
 
 
 def engineer_features(pdf):
-    """
-    Engineer features - FIXED VERSION
-    Creates all features BEFORE dropping any rows
-    """
+    
     pdf = pdf.sort_values('date').copy()
 
     # Time features
@@ -568,25 +566,15 @@ def forecast_product(pdf, days_ahead=7, model=None):
 
 
 if __name__ == "__main__":
+
     print("="*70)
     print("🚀 TRAINING GLOBAL TABLET PRICE MODEL")
     print("="*70)
 
-    import sys
-    if len(sys.argv) > 1:
-        filepath = sys.argv[1]
-    else:
-        local_path = r"C:\projects\final_project\full_price_prediction\tablets_cleaned_continuous.csv"
-        if os.path.exists(local_path):
-            filepath = local_path
-        else:
-            filepath = 'tablets_cleaned_continuous.csv'
-
-    print(f"\n📁 Using data file: {filepath}")
+    filepath = "tablets_cleaned_continuous.csv"
 
     model = train_global_model(filepath)
+
     save_global_model(model)
 
-    print("\n" + "="*70)
-    print("✅ TRAINING COMPLETE")
-    print("="*70)
+    print("\n✅ Training complete"
