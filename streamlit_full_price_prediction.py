@@ -5,53 +5,19 @@ import plotly.graph_objects as go
 from datetime import timedelta
 import os
 
-# ==========================================
+# ═══════════════════════════════════════════════════════════
 # PAGE CONFIG
-# ==========================================
-
+# ═══════════════════════════════════════════════════════════
 st.set_page_config(
-    page_title="AI Device Price Intelligence",
-    page_icon="📊",
-    layout="wide"
+    page_title="Price Tracker - Tablets & Mobiles",
+    page_icon="📱",
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
 
-# ==========================================
-# CUSTOM UI STYLE
-# ==========================================
-
-st.markdown("""
-<style>
-
-.main {
-    background-color:#0e1117;
-}
-
-h1,h2,h3{
-    color:#4CAF50;
-}
-
-.metric-card{
-    background:#1c1f26;
-    padding:15px;
-    border-radius:10px;
-}
-
-</style>
-""", unsafe_allow_html=True)
-
-# ==========================================
-# HEADER
-# ==========================================
-
-st.markdown("""
-# 📊 AI Device Price Intelligence Dashboard
-### Real-time analysis and forecasting for **Mobile & Tablet Prices**
-""")
-
-# ==========================================
+# ═══════════════════════════════════════════════════════════
 # IMPORT MODELS
-# ==========================================
-
+# ═══════════════════════════════════════════════════════════
 MODELS_LOADED = {'tablet': False, 'mobile': False}
 tablet_model = None
 mobile_model = None
@@ -86,252 +52,544 @@ try:
 except ImportError as e:
     st.error(f"❌ Error importing mobile_model_newVersion.py: {str(e)}")
 
+# ═══════════════════════════════════════════════════════════
+# CUSTOM CSS
+# ═══════════════════════════════════════════════════════════
+st.markdown("""
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+* { font-family: 'Inter', sans-serif; }
+.stApp { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+
+.main .block-container {
+    background: white;
+    border-radius: 20px;
+    padding: 2rem;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+}
+
+h1 {
+    color: #667eea;
+    font-weight: 700;
+    margin-bottom: 0.5rem;
+}
+
+h2, h3 {
+    color: #4a5568;
+    font-weight: 600;
+}
+
+.stSelectbox label, .stMultiSelect label {
+    font-weight: 600;
+    color: #2d3748;
+}
+
+div[data-testid="stMetricValue"] {
+    font-size: 1.8rem;
+    font-weight: 700;
+    color: #667eea;
+}
+
+.stButton > button {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border: none;
+    border-radius: 10px;
+    padding: 0.5rem 2rem;
+    font-weight: 600;
+    transition: all 0.3s;
+}
+
+.stButton > button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 20px rgba(102, 126, 234, 0.4);
+}
+
+section[data-testid="stSidebar"] {
+    background: linear-gradient(180deg, #667eea 0%, #764ba2 100%);
+}
+
+section[data-testid="stSidebar"] * {
+    color: white !important;
+}
+
+.device-badge {
+    display: inline-block;
+    padding: 0.3rem 0.8rem;
+    border-radius: 20px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    margin: 0.2rem;
+}
+
+.badge-tablet {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+}
+
+.badge-mobile {
+    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    color: white;
+}
+
+.stat-card {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 1.5rem;
+    border-radius: 15px;
+    text-align: center;
+    margin: 0.5rem 0;
+    box-shadow: 0 10px 30px rgba(102, 126, 234, 0.3);
+}
+
+.stat-label {
+    font-size: 0.85rem;
+    opacity: 0.9;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 0.5rem;
+}
+
+.stat-value {
+    font-size: 1.8rem;
+    font-weight: 700;
+}
+</style>
+""", unsafe_allow_html=True)
+
+# ═══════════════════════════════════════════════════════════
+# HELPER FUNCTIONS
+# ═══════════════════════════════════════════════════════════
+
+@st.cache_data(ttl=3600)
+def load_data(device_type):
+    """Load data based on device type"""
+    if device_type == "Tablets":
+        filepath = 'tablets_cleaned_continuous.csv'
+        load_func = load_tablet_data_func
+    else:
+        filepath = 'mobile_cleaned_70K.csv'
+        load_func = load_mobile_data_func
+    
+    try:
+        df = load_func(filepath)
+        return df, filepath
+    except FileNotFoundError:
+        st.error(f"❌ File not found: {filepath}")
+        return None, filepath
+    except Exception as e:
+        st.error(f"❌ Error loading data: {str(e)}")
+        return None, filepath
 
 
-# ==========================================
-# LOAD DATA
-# ==========================================
-
-@st.cache_data
-def load_tablet_data():
-
-    path = "tablets_cleaned_continuous.csv"
-
-    if os.path.exists(path):
-
-        return load_tablets(path)
-
-    return None
-
-
-@st.cache_data
-def load_mobile_data():
-
-    path = "mobile_cleaned_70K.csv"
-
-    if os.path.exists(path):
-
-        return load_mobiles(path)
-
-    return None
-
-
-# ==========================================
-# PRICE TREND CHART
-# ==========================================
-
-def price_chart(history_dates, history_prices, forecast_dates, forecast_prices):
-
+def create_forecast_chart(result, device_type):
+    """Create beautiful forecast chart"""
+    pdf = result['pdf']
+    forecast_dates = result['forecast_dates']
+    forecast_prices = result['forecast_prices']
+    mae = result['mae']
+    
+    # Colors
+    if device_type == "Tablets":
+        color_main = '#667eea'
+        color_forecast = '#f093fb'
+    else:
+        color_main = '#f5576c'
+        color_forecast = '#feca57'
+    
     fig = go.Figure()
-
-    fig.add_trace(
-        go.Scatter(
-            x=history_dates,
-            y=history_prices,
-            name="Historical Price",
-            mode="lines+markers"
-        )
+    
+    # Historical prices
+    fig.add_trace(go.Scatter(
+        x=pdf['date'],
+        y=pdf['price'],
+        mode='lines+markers',
+        name='Historical Price',
+        line=dict(color=color_main, width=3),
+        marker=dict(size=6, color=color_main),
+        hovertemplate='<b>%{x}</b><br>EGP %{y:,.0f}<extra></extra>'
+    ))
+    
+    # Rolling average
+    if 'rolling_avg_7' in pdf.columns:
+        fig.add_trace(go.Scatter(
+            x=pdf['date'],
+            y=pdf['rolling_avg_7'],
+            mode='lines',
+            name='7-Day Average',
+            line=dict(color=color_main, width=2, dash='dot'),
+            opacity=0.6,
+            hovertemplate='<b>%{x}</b><br>Avg: EGP %{y:,.0f}<extra></extra>'
+        ))
+    
+    # Connection to forecast
+    last_hist_date = pdf['date'].iloc[-1]
+    last_hist_price = pdf['price'].iloc[-1]
+    
+    fig.add_trace(go.Scatter(
+        x=[last_hist_date, forecast_dates[0]],
+        y=[last_hist_price, forecast_prices[0]],
+        mode='lines',
+        line=dict(color='gray', width=2, dash='dot'),
+        showlegend=False,
+        hoverinfo='skip'
+    ))
+    
+    # Forecast
+    fig.add_trace(go.Scatter(
+        x=forecast_dates,
+        y=forecast_prices,
+        mode='lines+markers',
+        name='7-Day Forecast',
+        line=dict(color=color_forecast, width=3, dash='dash'),
+        marker=dict(size=8, symbol='diamond', color=color_forecast),
+        hovertemplate='<b>%{x}</b><br>Forecast: EGP %{y:,.0f}<extra></extra>'
+    ))
+    
+    # Confidence band
+    upper = [p + mae for p in forecast_prices]
+    lower = [max(0, p - mae) for p in forecast_prices]
+    
+    fig.add_trace(go.Scatter(
+        x=forecast_dates + forecast_dates[::-1],
+        y=upper + lower[::-1],
+        fill='toself',
+        fillcolor=f'rgba(240, 147, 251, 0.2)',
+        line=dict(color='rgba(255,255,255,0)'),
+        name='Confidence Interval',
+        showlegend=True,
+        hoverinfo='skip'
+    ))
+    
+    # Today marker
+    today = pd.Timestamp.today().normalize()
+    today_str = today.strftime('%Y-%m-%d')
+    
+    fig.add_shape(
+        type="line",
+        x0=today_str, x1=today_str,
+        y0=0, y1=1,
+        yref='paper',
+        line=dict(color="gray", width=2, dash="dot")
     )
-
-    fig.add_trace(
-        go.Scatter(
-            x=forecast_dates,
-            y=forecast_prices,
-            name="Forecast",
-            mode="lines+markers",
-            line=dict(dash="dash")
-        )
+    
+    fig.add_annotation(
+        x=today_str, y=1,
+        yref='paper',
+        text="Today",
+        showarrow=False,
+        font=dict(color="gray", size=11),
+        yshift=10
     )
-
+    
+    # Layout
     fig.update_layout(
+        title={
+            'text': '📈 Price History & 7-Day Forecast',
+            'font': {'size': 20, 'color': '#2d3748', 'family': 'Inter'}
+        },
+        xaxis_title='Date',
+        yaxis_title='Price (EGP)',
+        plot_bgcolor='white',
+        paper_bgcolor='white',
+        font=dict(family='Inter', size=12, color='#4a5568'),
+        hovermode='x unified',
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="right",
+            x=1,
+            bgcolor='rgba(255,255,255,0.8)',
+            bordercolor='#e2e8f0',
+            borderwidth=1
+        ),
         height=500,
-        xaxis_title="Date",
-        yaxis_title="Price (EGP)"
+        margin=dict(l=50, r=50, t=80, b=50)
     )
-
+    
+    fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor='#f7fafc')
+    fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='#f7fafc')
+    
     return fig
 
 
-# ==========================================
-# FORECAST TABLE
-# ==========================================
+# ═══════════════════════════════════════════════════════════
+# MAIN APP
+# ═══════════════════════════════════════════════════════════
 
-def build_forecast_table(dates, prices):
+st.title("📱 Price Tracker Pro")
+st.markdown("**Track & Forecast Prices for Tablets & Mobile Phones**")
+st.markdown("---")
 
-    df = pd.DataFrame({
-        "Date":dates,
-        "Predicted Price":prices
-    })
+# ═══════════════════════════════════════════════════════════
+# SIDEBAR
+# ═══════════════════════════════════════════════════════════
 
-    stats = {
-        "min":np.min(prices),
-        "max":np.max(prices),
-        "avg":np.mean(prices)
-    }
-
-    return df,stats
-
-
-# ==========================================
-# MARKET INSIGHTS
-# ==========================================
-
-def market_insights(df):
-
-    latest = df.sort_values("date").groupby("product_key").tail(1)
-
-    rising = latest.sort_values("price",ascending=False).head(5)
-
-    falling = latest.sort_values("price").head(5)
-
-    return rising, falling
-
-
-# ==========================================
-# DASHBOARD VIEW
-# ==========================================
-
-def dashboard(df, forecast_func, device):
-
-    if df is None:
-
-        st.warning("Dataset not found")
-
-        return
-
-    st.sidebar.header("Filters")
-
-    brand = st.sidebar.selectbox("Brand", sorted(df["brand"].dropna().unique()))
-    ram = st.sidebar.selectbox("RAM", sorted(df["ram_gb"].dropna().unique()))
-    storage = st.sidebar.selectbox("Storage", sorted(df["storage_gb"].dropna().unique()))
-
-    filtered = df[
-        (df["brand"]==brand) &
-        (df["ram_gb"]==ram) &
-        (df["storage_gb"]==storage)
-    ]
-
-    product = st.selectbox("Select Product", filtered["name"].unique())
-
-    pdf = filtered[filtered["name"]==product].sort_values("date")
-
-    if len(pdf)<10:
-
-        st.warning("Not enough data")
-
-        return
-
-    # forecast
-
-    forecast_dates, forecast_prices = forecast_func(pdf)
-
-    history_dates = pdf["date"]
-    history_prices = pdf["price"]
-
-    # ==========================================
-    # KPI SECTION
-    # ==========================================
-
-    col1,col2,col3,col4 = st.columns(4)
-
-    current = history_prices.iloc[-1]
-    predicted = forecast_prices[-1]
-
-    change = predicted-current
-
-    col1.metric("Current Price", f"{current:,.0f} EGP")
-    col2.metric("7-Day Forecast", f"{predicted:,.0f} EGP", f"{change:,.0f}")
-    col3.metric("Observations", len(pdf))
-    col4.metric("Average Price", f"{history_prices.mean():,.0f} EGP")
-
-    # ==========================================
-    # PRICE CHART
-    # ==========================================
-
-    st.subheader("📈 Price Trend & Forecast")
-
-    st.plotly_chart(
-        price_chart(history_dates,history_prices,forecast_dates,forecast_prices),
-        use_container_width=True
+with st.sidebar:
+    st.markdown("## 🎯 Select Device Type")
+    
+    device_type = st.radio(
+        "Choose category:",
+        options=["Tablets", "Mobile Phones"],
+        index=0,
+        label_visibility="collapsed"
     )
+    
+    st.markdown("---")
+    
+    # Check if model is loaded
+    model_key = 'tablet' if device_type == "Tablets" else 'mobile'
+    
+    if MODELS_LOADED[model_key]:
+        st.success(f"✅ {device_type} model loaded")
+    else:
+        st.error(f"❌ {device_type} model not found")
+        st.info("Please train the model first by running the model file")
+        st.code(f"python {'tablet' if model_key == 'tablet' else 'mobile'}_model_newVersion.py")
+        st.stop()
+    
+    # Load data
+    df, filepath = load_data(device_type)
+    
+    if df is not None:
+        st.markdown("### 📊 Dataset Info")
+        st.metric("Total Products", f"{df['product_key'].nunique():,}")
+        st.metric("Data Points", f"{len(df):,}")
+        
+        last_update = df['date'].max()
+        st.markdown(f"**Last Updated:** {last_update.strftime('%b %d, %Y')}")
+    
+    st.markdown("---")
+    st.markdown("### ℹ️ About")
+    st.markdown(f"""
+    Currently showing: **{device_type}**
+    
+    Data file: `{filepath}`
+    
+    Model: **Global Linear Regression**
+    """)
 
-    # ==========================================
-    # FORECAST TABLE
-    # ==========================================
+if df is None:
+    st.stop()
 
-    st.subheader("📅 7-Day Forecast Table")
+# ═══════════════════════════════════════════════════════════
+# FILTERS
+# ═══════════════════════════════════════════════════════════
 
-    forecast_df,stats = build_forecast_table(forecast_dates,forecast_prices)
+st.markdown("### 🔍 Search & Filter Products")
 
-    st.dataframe(forecast_df)
+search_term = st.text_input(
+    "🔎 Search by product name",
+    placeholder="e.g., iPad, Galaxy, iPhone...",
+    help="Search for products by name"
+)
 
-    col1,col2,col3 = st.columns(3)
+if search_term:
+    filtered_df = df[df['name'].str.contains(search_term, case=False, na=False)]
+else:
+    filtered_df = df.copy()
 
-    col1.metric("Min Forecast", f"{stats['min']:,.0f} EGP")
-    col2.metric("Max Forecast", f"{stats['max']:,.0f} EGP")
-    col3.metric("Avg Forecast", f"{stats['avg']:,.0f} EGP")
+# Filters
+col1, col2, col3, col4 = st.columns(4)
 
+with col1:
+    brands = sorted(filtered_df['brand'].unique())
+    selected_brands = st.multiselect("🏷️ Brand", brands, default=[])
 
-# ==========================================
-# INSIGHTS SECTION
-# ==========================================
+with col2:
+    websites = sorted(filtered_df['website'].unique())
+    selected_websites = st.multiselect("🛒 Website", websites, default=[])
 
-def insights_section(df):
+with col3:
+    rams = sorted(filtered_df['ram_gb'].unique())
+    selected_rams = st.multiselect("💾 RAM (GB)", rams, default=[])
 
-    st.subheader("📊 Market Insights")
+with col4:
+    storages = sorted(filtered_df['storage_gb'].unique())
+    selected_storages = st.multiselect("💿 Storage (GB)", storages, default=[])
 
-    rising, falling = market_insights(df)
+# Apply filters
+if selected_brands:
+    filtered_df = filtered_df[filtered_df['brand'].isin(selected_brands)]
+if selected_websites:
+    filtered_df = filtered_df[filtered_df['website'].isin(selected_websites)]
+if selected_rams:
+    filtered_df = filtered_df[filtered_df['ram_gb'].isin(selected_rams)]
+if selected_storages:
+    filtered_df = filtered_df[filtered_df['storage_gb'].isin(selected_storages)]
 
-    col1,col2 = st.columns(2)
+# Active filters
+active_filters = []
+if search_term:
+    active_filters.append(f"Search: {search_term}")
+if selected_brands:
+    active_filters.append(f"Brands: {', '.join(selected_brands)}")
+if selected_websites:
+    active_filters.append(f"Websites: {', '.join(selected_websites)}")
+if selected_rams:
+    active_filters.append(f"RAM: {', '.join(map(str, selected_rams))}GB")
+if selected_storages:
+    active_filters.append(f"Storage: {', '.join(map(str, selected_storages))}GB")
 
-    with col1:
+if active_filters:
+    badge_class = 'badge-tablet' if device_type == "Tablets" else 'badge-mobile'
+    badges_html = ''.join([f'<span class="device-badge {badge_class}">{f}</span>' for f in active_filters])
+    st.markdown(f"**Active Filters:** {badges_html}", unsafe_allow_html=True)
 
-        st.write("🔥 Highest Price Products")
+st.markdown("---")
 
-        st.dataframe(rising[["name","price","website"]])
+# ═══════════════════════════════════════════════════════════
+# PRODUCT SELECTION
+# ═══════════════════════════════════════════════════════════
 
-    with col2:
+if filtered_df.empty:
+    st.warning("⚠️ No products found. Try different filters.")
+    st.stop()
 
-        st.write("📉 Lowest Price Products")
+product_groups = filtered_df.groupby('product_key').agg({
+    'name': 'first',
+    'brand': 'first',
+    'website': 'first',
+    'ram_gb': 'first',
+    'storage_gb': 'first',
+    'price': 'count'
+}).reset_index()
 
-        st.dataframe(falling[["name","price","website"]])
+product_groups.columns = ['product_key', 'name', 'brand', 'website', 'ram_gb', 'storage_gb', 'n_obs']
+product_groups = product_groups.sort_values('n_obs', ascending=False)
 
+st.markdown(f"**Found {len(product_groups)} products**")
 
-# ==========================================
-# MAIN TABS
-# ==========================================
+selected_product = st.selectbox(
+    f"📱 Select a {device_type[:-1].lower()}",
+    options=product_groups['product_key'].tolist(),
+    format_func=lambda x: (
+        f"{product_groups[product_groups['product_key']==x]['name'].values[0]} | "
+        f"{product_groups[product_groups['product_key']==x]['ram_gb'].values[0]}GB + "
+        f"{product_groups[product_groups['product_key']==x]['storage_gb'].values[0]}GB | "
+        f"{product_groups[product_groups['product_key']==x]['website'].values[0].upper()} | "
+        f"({product_groups[product_groups['product_key']==x]['n_obs'].values[0]} observations)"
+    ),
+    help="Select a product to see price forecast"
+)
 
-tab1,tab2,tab3 = st.tabs(["📱 Mobile","💻 Tablet","📊 Market Insights"])
+# ═══════════════════════════════════════════════════════════
+# FORECAST
+# ═══════════════════════════════════════════════════════════
 
-# MOBILE
-with tab1:
+st.markdown("---")
 
-    st.header("Mobile Price Forecast")
+product_df = df[df['product_key'] == selected_product].copy()
+product_info = product_groups[product_groups['product_key'] == selected_product].iloc[0]
 
-    if MODELS_AVAILABLE:
+col1, col2 = st.columns([3, 1])
+with col1:
+    st.markdown(f"## 📱 {product_info['name']}")
+with col2:
+    badge_class = 'badge-tablet' if device_type == "Tablets" else 'badge-mobile'
+    st.markdown(f'<span class="device-badge {badge_class}">{device_type[:-1]}</span>', unsafe_allow_html=True)
 
-        df = load_mobile_data()
+# Specs
+spec_col1, spec_col2, spec_col3, spec_col4 = st.columns(4)
+spec_col1.metric("🏷️ Brand", product_info['brand'].title())
+spec_col2.metric("💾 RAM", f"{product_info['ram_gb']}GB")
+spec_col3.metric("💿 Storage", f"{product_info['storage_gb']}GB")
+spec_col4.metric("🛒 Website", product_info['website'].upper())
 
-        dashboard(df,forecast_mobile,"mobile")
+st.markdown("---")
 
+# Generate forecast
+with st.spinner("🤖 Generating AI forecast..."):
+    try:
+        # Use appropriate model and function
+        if device_type == "Tablets":
+            result = forecast_tablet_func(product_df, days_ahead=7, model=tablet_model)
+        else:
+            result = forecast_mobile_func(product_df, days_ahead=7, model=mobile_model)
+    except Exception as e:
+        st.error(f"❌ Error generating forecast: {str(e)}")
+        st.code(str(e))
+        st.stop()
 
-# TABLET
-with tab2:
+# Stats
+stat_col1, stat_col2, stat_col3, stat_col4 = st.columns(4)
 
-    st.header("Tablet Price Forecast")
+with stat_col1:
+    st.markdown(f"""
+    <div class="stat-card">
+        <div class="stat-label">Current Price</div>
+        <div class="stat-value">EGP {result['last_price']:,.0f}</div>
+    </div>
+    """, unsafe_allow_html=True)
 
-    if MODELS_AVAILABLE:
+with stat_col2:
+    st.markdown(f"""
+    <div class="stat-card">
+        <div class="stat-label">7-Day Forecast</div>
+        <div class="stat-value">EGP {result['forecast_prices'][-1]:,.0f}</div>
+    </div>
+    """, unsafe_allow_html=True)
 
-        df = load_tablet_data()
+with stat_col3:
+    change = result['forecast_prices'][-1] - result['last_price']
+    change_pct = (change / result['last_price']) * 100
+    st.markdown(f"""
+    <div class="stat-card">
+        <div class="stat-label">Expected Change</div>
+        <div class="stat-value">{change:+,.0f} EGP</div>
+        <div style="font-size:0.9rem; margin-top:0.3rem;">({change_pct:+.1f}%)</div>
+    </div>
+    """, unsafe_allow_html=True)
 
-        dashboard(df,forecast_tablet,"tablet")
+with stat_col4:
+    st.markdown(f"""
+    <div class="stat-card">
+        <div class="stat-label">Confidence</div>
+        <div class="stat-value">{result['confidence']}</div>
+        <div style="font-size:0.9rem; margin-top:0.3rem;">({result['n_obs']} days tracked)</div>
+    </div>
+    """, unsafe_allow_html=True)
 
+st.markdown("<br>", unsafe_allow_html=True)
 
-# INSIGHTS
-with tab3:
+# Chart
+st.plotly_chart(create_forecast_chart(result, device_type), use_container_width=True)
 
-    df_mobile = load_mobile_data()
+# Forecast table
+st.markdown("### 📅 7-Day Forecast Breakdown")
 
-    if df_mobile is not None:
+forecast_table = pd.DataFrame({
+    'Date': [d.strftime('%A, %B %d') for d in result['forecast_dates']],
+    'Forecasted Price': [f"EGP {p:,.0f}" for p in result['forecast_prices']],
+    'Lower Bound': [f"EGP {max(0, p - result['mae']):,.0f}" for p in result['forecast_prices']],
+    'Upper Bound': [f"EGP {(p + result['mae']):,.0f}" for p in result['forecast_prices']]
+})
 
-        insights_section(df_mobile)
+st.dataframe(forecast_table, use_container_width=True, hide_index=True)
+
+# Stats
+st.markdown("---")
+st.markdown("### 📊 Price Statistics")
+
+stats_col1, stats_col2, stats_col3, stats_col4 = st.columns(4)
+stats_col1.metric("📉 Minimum Price", f"EGP {result['min_price']:,.0f}")
+stats_col2.metric("📊 Average Price", f"EGP {result['avg_price']:,.0f}")
+stats_col3.metric("📈 Maximum Price", f"EGP {result['max_price']:,.0f}")
+stats_col4.metric("🎯 Model Accuracy (MAE)", f"±{result['mae']:,.0f} EGP")
+
+# URL
+if 'URL' in product_df.columns:
+    url = product_df['URL'].iloc[-1]
+    if url and str(url) != 'nan':
+        st.markdown(f"[🔗 View on {product_info['website'].upper()}]({url})")
+
+# Footer
+st.markdown("---")
+st.markdown("""
+<div style='text-align: center; color: #718096; font-size: 0.9rem; padding: 1rem;'>
+    <p>📱 Price Tracker Pro - Powered by Global Linear Regression</p>
+    <p>One model trained on ALL products for better generalization</p>
+</div>
+""", unsafe_allow_html=True)
