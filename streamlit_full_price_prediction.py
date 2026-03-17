@@ -344,8 +344,6 @@ with st.sidebar:
         "Navigation",
         ["🏠 Dashboard", "📊 Market Insights"]
     )
-        
-        st.markdown("---")
 if page == "🏠 Dashboard":
 
     # Load data
