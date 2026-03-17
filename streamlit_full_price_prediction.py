@@ -382,145 +382,118 @@ st.markdown("---")
 # ═══════════════════════════════════════════════════════════
 # SIDEBAR
 # ═══════════════════════════════════════════════════════════
-
-with st.sidebar:
-    st.markdown("## 🎯 Select Device Type")
-    
-    device_type = st.radio(
-        "Choose category:",
-        options=["Tablets", "Mobile Phones"],
-        index=0,
-        label_visibility="collapsed"
-    )
-    
-    st.markdown("---")
-    
-    # Check if model is loaded
-    model_key = 'tablet' if device_type == "Tablets" else 'mobile'
-    
-    if MODELS_LOADED[model_key]:
-        st.success(f"✅ {device_type} model loaded")
-    else:
-        st.error(f"❌ {device_type} model not found")
-        st.info("Please train the model first by running the model file")
-        st.code(f"python {'tablet' if model_key == 'tablet' else 'mobile'}_model_newVersion.py")
-        st.stop()
-    
-    # Load data
-    df, filepath = load_data(device_type)
-    
-    if df is not None:
-        st.markdown("### 📊 Dataset Info")
-        st.metric("Total Products", f"{df['product_key'].nunique():,}")
-        st.metric("Data Points", f"{len(df):,}")
+page = st.sidebar.radio(
+    "Navigation",
+    ["🏠 Dashboard", "📊 Market Insights"])
+if page == "🏠 Dashboard":
+    with st.sidebar:
+        st.markdown("## 🎯 Select Device Type")
         
-        last_update = df['date'].max()
-        st.markdown(f"**Last Updated:** {last_update.strftime('%b %d, %Y')}")
+        device_type = st.radio(
+            "Choose category:",
+            options=["Tablets", "Mobile Phones"],
+            index=0,
+            label_visibility="collapsed"
+        )
+        
+        st.markdown("---")
+        
+        # Check if model is loaded
+        model_key = 'tablet' if device_type == "Tablets" else 'mobile'
+        
+        if MODELS_LOADED[model_key]:
+            st.success(f"✅ {device_type} model loaded")
+        else:
+            st.error(f"❌ {device_type} model not found")
+            st.info("Please train the model first by running the model file")
+            st.code(f"python {'tablet' if model_key == 'tablet' else 'mobile'}_model_newVersion.py")
+            st.stop()
+        
+        # Load data
+        df, filepath = load_data(device_type)
+        
+        if df is not None:
+            st.markdown("### 📊 Dataset Info")
+            st.metric("Total Products", f"{df['product_key'].nunique():,}")
+            st.metric("Data Points", f"{len(df):,}")
+            
+            last_update = df['date'].max()
+            st.markdown(f"**Last Updated:** {last_update.strftime('%b %d, %Y')}")
+        
+        st.markdown("---")
+        st.markdown("### ℹ️ About")
+        st.markdown(f"""
+        Currently showing: **{device_type}**
+        
+        Data file: `{filepath}`
+        
+        Model: **Global Linear Regression**
+        """)
     
-    st.markdown("---")
-    st.markdown("### ℹ️ About")
-    st.markdown(f"""
-    Currently showing: **{device_type}**
-    
-    Data file: `{filepath}`
-    
-    Model: **Global Linear Regression**
-    """)
+    if df is None:
+        st.stop()
+        
+elif page == "📊 Market Insights":
 
-if df is None:
-    st.stop()
-# ═══════════════════════════════════════════════════════════
-# 📊 MARKET INSIGHTS (ROBUST VERSION)
-# ═══════════════════════════════════════════════════════════
+    st.title("📊 Market Insights")
 
-st.markdown("## 📊 Market Insights")
+    df, source = load_data(device_type)
 
-def generate_market_insights(df):
+    if df is not None and len(df) > 0:
 
-    temp = df.copy()
-    temp = temp.sort_values(['product_key', 'date'])
+        temp = df.copy()
+        temp = temp.sort_values(['product_key', 'date'])
 
-    # Rolling average (more stable than single previous value)
-    temp['rolling_avg_3'] = temp.groupby('product_key')['price'].transform(
-        lambda x: x.rolling(3, min_periods=1).mean()
-    )
+        # Rolling mean
+        temp['rolling_mean'] = temp.groupby('product_key')['price'].transform(
+            lambda x: x.rolling(3, min_periods=1).mean()
+        )
 
-    # Deviation from recent trend
-    temp['trend_diff'] = temp['price'] - temp['rolling_avg_3']
-    temp['pct_vs_trend'] = (temp['trend_diff'] / temp['rolling_avg_3']) * 100
+        # Trend difference
+        temp['trend_diff_pct'] = ((temp['price'] - temp['rolling_mean']) / temp['rolling_mean']) * 100
 
-    # Volatility (std)
-    temp['volatility'] = temp.groupby('product_key')['price'].transform(
-        lambda x: x.rolling(5, min_periods=2).std()
-    )
+        # Latest per product
+        latest = temp.groupby('product_key').tail(1).copy()
 
-    # Get latest record per product
-    latest = temp.groupby('product_key').tail(1)
+        latest = latest.replace([np.inf, -np.inf], np.nan)
+        latest = latest.fillna(0)
 
-    latest = latest.replace([np.inf, -np.inf], np.nan)
-    latest = latest.dropna(subset=['pct_vs_trend'])
+        # Top movements
+        top_up = latest.sort_values('trend_diff_pct', ascending=False).head(10)
+        top_down = latest.sort_values('trend_diff_pct', ascending=True).head(10)
 
-    # Top movements
-    top_up = latest.sort_values('pct_vs_trend', ascending=False).head(5)
-    top_down = latest.sort_values('pct_vs_trend', ascending=True).head(5)
-    most_volatile = latest.sort_values('volatility', ascending=False).head(5)
+        col1, col2 = st.columns(2)
 
-    return top_up, top_down, most_volatile
-
-
-if df is not None and len(df) > 0:
-
-    top_up, top_down, volatile = generate_market_insights(df)
-
-    col1, col2, col3 = st.columns(3)
-
-    # 📈 UP
-    with col1:
-        st.markdown("### 📈 Trending Up")
-        if len(top_up) > 0:
+        # 📈 Trending Up
+        with col1:
+            st.subheader("📈 Trending Up")
             st.dataframe(
-                top_up[['name', 'price', 'pct_vs_trend']]
+                top_up[['name', 'price', 'trend_diff_pct']]
                 .rename(columns={
                     'name': 'Product',
                     'price': 'Price',
-                    'pct_vs_trend': '% Above Trend'
+                    'trend_diff_pct': '% Above Trend'
                 }),
                 use_container_width=True
             )
-        else:
-            st.info("Not enough data")
 
-    # 📉 DOWN
-    with col2:
-        st.markdown("### 📉 Trending Down")
-        if len(top_down) > 0:
+        # 📉 Trending Down
+        with col2:
+            st.subheader("📉 Trending Down")
             st.dataframe(
-                top_down[['name', 'price', 'pct_vs_trend']]
+                top_down[['name', 'price', 'trend_diff_pct']]
                 .rename(columns={
                     'name': 'Product',
                     'price': 'Price',
-                    'pct_vs_trend': '% Below Trend'
+                    'trend_diff_pct': '% Below Trend'
                 }),
                 use_container_width=True
             )
-        else:
-            st.info("Not enough data")
 
-    # 🔥 VOLATILE
-    with col3:
-        st.markdown("### 🔥 Most Volatile")
-        if len(volatile) > 0:
-            st.dataframe(
-                volatile[['name', 'price', 'volatility']]
-                .rename(columns={
-                    'name': 'Product',
-                    'price': 'Price',
-                    'volatility': 'Volatility'
-                }),
-                use_container_width=True
-            )
-        else:
-            st.info("Not enough data")
+    else:
+        st.warning("No data available")   
+        
+
 # ═══════════════════════════════════════════════════════════
 # FILTERS
 # ═══════════════════════════════════════════════════════════
