@@ -13,7 +13,7 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 @st.cache_data(ttl=600)
 def load_data_from_db(device_type):
-     try:
+    try:
 
         if device_type == "Tablets":
             table = "tablets_prices"
@@ -50,7 +50,7 @@ def load_data_from_db(device_type):
 
         return None
 
-    except Exception as e:
+     except Exception as e:
         st.sidebar.warning(f"Database connection failed: {str(e)}")
         return None
 # ═══════════════════════════════════════════════════════════
