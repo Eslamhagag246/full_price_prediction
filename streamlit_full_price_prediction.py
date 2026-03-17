@@ -325,9 +325,6 @@ st.markdown("---")
 # ═══════════════════════════════════════════════════════════
 # SIDEBAR
 # ═══════════════════════════════════════════════════════════
-page = st.sidebar.radio(
-    "Navigation",
-    ["🏠 Dashboard", "📊 Market Insights"])
 with st.sidebar:
     st.markdown("## 🎯 Select Device Type")
 
