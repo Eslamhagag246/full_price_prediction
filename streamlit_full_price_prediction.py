@@ -313,63 +313,6 @@ def create_forecast_chart(result, device_type):
     fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='#f7fafc')
     
     return fig
-# ═══════════════════════════════════════════════════════════
-# 🧠 BUY / WAIT RECOMMENDATION ENGINE
-# ═══════════════════════════════════════════════════════════
-
-st.markdown("## 🧠 Smart Recommendation")
-
-def generate_recommendation(pdf, forecast_prices):
-
-    current_price = pdf['price'].iloc[-1]
-    avg_price = pdf['price'].mean()
-
-    # Trend
-    rolling_mean = pdf['price'].rolling(3, min_periods=1).mean().iloc[-1]
-
-    # Forecast trend
-    future_avg = np.mean(forecast_prices)
-
-    # Volatility
-    volatility = pdf['price'].rolling(5, min_periods=2).std().iloc[-1]
-    volatility = 0 if pd.isna(volatility) else volatility
-
-    # Decision logic
-    if current_price < rolling_mean and future_avg > current_price:
-        decision = "🟢 BUY NOW"
-        reason = "Price is below trend and expected to increase"
-
-    elif current_price > rolling_mean and future_avg < current_price:
-        decision = "🔴 WAIT"
-        reason = "Price is above trend and expected to drop"
-
-    elif volatility > 1000:
-        decision = "⚠️ RISKY"
-        reason = "High price volatility"
-
-    else:
-        decision = "🟡 HOLD"
-        reason = "Stable price, no strong signal"
-
-    return decision, reason, current_price, avg_price, volatility
-
-
-# APPLY ON SELECTED PRODUCT
-if 'selected_product_df' in locals() and forecast_result:
-
-    decision, reason, current_price, avg_price, volatility = generate_recommendation(
-        selected_product_df,
-        forecast_result['forecast_prices']
-    )
-
-    col1, col2, col3 = st.columns(3)
-
-    col1.metric("Current Price", f"{current_price:,.0f} EGP")
-    col2.metric("Average Price", f"{avg_price:,.0f} EGP")
-    col3.metric("Volatility", f"{volatility:,.0f}")
-
-    st.markdown(f"### {decision}")
-    st.info(reason)
 
 # ═══════════════════════════════════════════════════════════
 # MAIN APP
@@ -385,104 +328,116 @@ st.markdown("---")
 page = st.sidebar.radio(
     "Navigation",
     ["🏠 Dashboard", "📊 Market Insights"])
+with st.sidebar:
+    st.markdown("## 🎯 Select Device Type")
+
+    device_type = st.radio(
+        "Choose category:",
+        options=["Tablets", "Mobile Phones"],
+        index=0,
+        label_visibility="collapsed"
+    )
+
+    st.markdown("---")
+
+    page = st.radio(
+        "Navigation",
+        ["🏠 Dashboard", "📊 Market Insights"]
+    )
+        
+        st.markdown("---")
 if page == "🏠 Dashboard":
-    with st.sidebar:
-        st.markdown("## 🎯 Select Device Type")
-        
-        device_type = st.radio(
-            "Choose category:",
-            options=["Tablets", "Mobile Phones"],
-            index=0,
-            label_visibility="collapsed"
-        )
-        
-        st.markdown("---")
-        
-        # Check if model is loaded
-        model_key = 'tablet' if device_type == "Tablets" else 'mobile'
-        
-        if MODELS_LOADED[model_key]:
-            st.success(f"✅ {device_type} model loaded")
-        else:
-            st.error(f"❌ {device_type} model not found")
-            st.info("Please train the model first by running the model file")
-            st.code(f"python {'tablet' if model_key == 'tablet' else 'mobile'}_model_newVersion.py")
-            st.stop()
-        
-        # Load data
-        df, filepath = load_data(device_type)
-        
-        if df is not None:
-            st.markdown("### 📊 Dataset Info")
-            st.metric("Total Products", f"{df['product_key'].nunique():,}")
-            st.metric("Data Points", f"{len(df):,}")
-            
-            last_update = df['date'].max()
-            st.markdown(f"**Last Updated:** {last_update.strftime('%b %d, %Y')}")
-        
-        st.markdown("---")
-        st.markdown("### ℹ️ About")
-        st.markdown(f"""
-        Currently showing: **{device_type}**
-        
-        Data file: `{filepath}`
-        
-        Model: **Global Linear Regression**
-        """)
-    
+
+    # Load data
+    df, filepath = load_data(device_type)
+
     if df is None:
         st.stop()
+        # Check if model is loaded
+    model_key = 'tablet' if device_type == "Tablets" else 'mobile'
+    
+    if MODELS_LOADED[model_key]:
+        st.success(f"✅ {device_type} model loaded")
+    else:
+        st.error(f"❌ {device_type} model not found")
+        st.info("Please train the model first by running the model file")
+        st.code(f"python {'tablet' if model_key == 'tablet' else 'mobile'}_model_newVersion.py")
+        st.stop()
+    
+    # Load data
+    df, filepath = load_data(device_type)
+    
+    if df is not None:
+        st.markdown("### 📊 Dataset Info")
+        st.metric("Total Products", f"{df['product_key'].nunique():,}")
+        st.metric("Data Points", f"{len(df):,}")
+        
+        last_update = df['date'].max()
+        st.markdown(f"**Last Updated:** {last_update.strftime('%b %d, %Y')}")
+    
+    st.markdown("---")
+    st.markdown("### ℹ️ About")
+    st.markdown(f"""
+    Currently showing: **{device_type}**
+    
+    Data file: `{filepath}`
+    
+    Model: **Global Linear Regression**
+    """)
+
+if df is None:
+    st.stop()
         
 elif page == "📊 Market Insights":
 
     st.title("📊 Market Insights")
 
-    # ✅ LOAD DATA AGAIN HERE
     df, source = load_data(device_type)
 
-    if df is not None and len(df) > 0:
+    if df is None:
+        st.stop()
 
-        temp = df.copy()
-        temp = temp.sort_values(['product_key', 'date'])
+    temp = df.copy()
+    temp = temp.sort_values(['product_key', 'date'])
 
-        temp['rolling_mean'] = temp.groupby('product_key')['price'].transform(
-            lambda x: x.rolling(3, min_periods=1).mean()
+    temp['rolling_mean'] = temp.groupby('product_key')['price'].transform(
+        lambda x: x.rolling(3, min_periods=1).mean()
+    )
+
+    temp['trend_diff_pct'] = ((temp['price'] - temp['rolling_mean']) / temp['rolling_mean']) * 100
+
+    latest = temp.groupby('product_key').tail(1).copy()
+    latest = latest.replace([np.inf, -np.inf], np.nan)
+    latest = latest.fillna(0)
+
+    top_up = latest.sort_values('trend_diff_pct', ascending=False).head(10)
+    top_down = latest.sort_values('trend_diff_pct', ascending=True).head(10)
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.subheader("📈 Trending Up")
+        st.dataframe(
+            top_up[['name', 'price', 'trend_diff_pct']]
+            .rename(columns={
+                'name': 'Product',
+                'price': 'Price',
+                'trend_diff_pct': '% Above Trend'
+            }),
+            use_container_width=True
         )
 
-        temp['trend_diff_pct'] = ((temp['price'] - temp['rolling_mean']) / temp['rolling_mean']) * 100
-
-        latest = temp.groupby('product_key').tail(1).copy()
-        latest = latest.replace([np.inf, -np.inf], np.nan)
-        latest = latest.fillna(0)
-
-        top_up = latest.sort_values('trend_diff_pct', ascending=False).head(10)
-        top_down = latest.sort_values('trend_diff_pct', ascending=True).head(10)
-
-        col1, col2 = st.columns(2)
-
-        with col1:
-            st.subheader("📈 Trending Up")
-            st.dataframe(
-                top_up[['name', 'price', 'trend_diff_pct']]
-                .rename(columns={
-                    'name': 'Product',
-                    'price': 'Price',
-                    'trend_diff_pct': '% Above Trend'
-                }),
-                use_container_width=True
-            )
-
-        with col2:
-            st.subheader("📉 Trending Down")
-            st.dataframe(
-                top_down[['name', 'price', 'trend_diff_pct']]
-                .rename(columns={
-                    'name': 'Product',
-                    'price': 'Price',
-                    'trend_diff_pct': '% Below Trend'
-                }),
-                use_container_width=True
-            )
+    with col2:
+        st.subheader("📉 Trending Down")
+        st.dataframe(
+            top_down[['name', 'price', 'trend_diff_pct']]
+            .rename(columns={
+                'name': 'Product',
+                'price': 'Price',
+                'trend_diff_pct': '% Below Trend'
+            }),
+            use_container_width=True
+        )
 # ═══════════════════════════════════════════════════════════
 # FILTERS
 # ═══════════════════════════════════════════════════════════
@@ -583,6 +538,63 @@ selected_product = st.selectbox(
     ),
     help="Select a product to see price forecast"
 )
+# ═══════════════════════════════════════════════════════════
+# 🧠 BUY / WAIT RECOMMENDATION ENGINE
+# ═══════════════════════════════════════════════════════════
+
+st.markdown("## 🧠 Smart Recommendation")
+
+def generate_recommendation(pdf, forecast_prices):
+
+    current_price = pdf['price'].iloc[-1]
+    avg_price = pdf['price'].mean()
+
+    # Trend
+    rolling_mean = pdf['price'].rolling(3, min_periods=1).mean().iloc[-1]
+
+    # Forecast trend
+    future_avg = np.mean(forecast_prices)
+
+    # Volatility
+    volatility = pdf['price'].rolling(5, min_periods=2).std().iloc[-1]
+    volatility = 0 if pd.isna(volatility) else volatility
+
+    # Decision logic
+    if current_price < rolling_mean and future_avg > current_price:
+        decision = "🟢 BUY NOW"
+        reason = "Price is below trend and expected to increase"
+
+    elif current_price > rolling_mean and future_avg < current_price:
+        decision = "🔴 WAIT"
+        reason = "Price is above trend and expected to drop"
+
+    elif volatility > 1000:
+        decision = "⚠️ RISKY"
+        reason = "High price volatility"
+
+    else:
+        decision = "🟡 HOLD"
+        reason = "Stable price, no strong signal"
+
+    return decision, reason, current_price, avg_price, volatility
+
+
+# APPLY ON SELECTED PRODUCT
+if 'selected_product_df' in locals() and forecast_result:
+
+    decision, reason, current_price, avg_price, volatility = generate_recommendation(
+        selected_product_df,
+        forecast_result['forecast_prices']
+    )
+
+    col1, col2, col3 = st.columns(3)
+
+    col1.metric("Current Price", f"{current_price:,.0f} EGP")
+    col2.metric("Average Price", f"{avg_price:,.0f} EGP")
+    col3.metric("Volatility", f"{volatility:,.0f}")
+
+    st.markdown(f"### {decision}")
+    st.info(reason)
 
 # ═══════════════════════════════════════════════════════════
 # FORECAST
