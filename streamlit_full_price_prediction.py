@@ -434,42 +434,34 @@ if page == "🏠 Dashboard":
         st.stop()
         
 elif page == "📊 Market Insights":
-    
-    st.markdown("## 📊 Market Insights")
-    
+
+    st.title("📊 Market Insights")
+
+    # ✅ LOAD DATA AGAIN HERE
+    df, source = load_data(device_type)
+
     if df is not None and len(df) > 0:
-    
+
         temp = df.copy()
         temp = temp.sort_values(['product_key', 'date'])
-    
-        # Rolling stats
+
         temp['rolling_mean'] = temp.groupby('product_key')['price'].transform(
             lambda x: x.rolling(3, min_periods=1).mean()
         )
-    
-        temp['rolling_std'] = temp.groupby('product_key')['price'].transform(
-            lambda x: x.rolling(5, min_periods=2).std()
-        )
-    
-        # Trend difference
+
         temp['trend_diff_pct'] = ((temp['price'] - temp['rolling_mean']) / temp['rolling_mean']) * 100
-    
-        # Latest snapshot per product
+
         latest = temp.groupby('product_key').tail(1).copy()
-    
         latest = latest.replace([np.inf, -np.inf], np.nan)
         latest = latest.fillna(0)
-    
-        # Always get results (even if small dataset)
-        top_up = latest.sort_values('trend_diff_pct', ascending=False).head(5)
-        top_down = latest.sort_values('trend_diff_pct', ascending=True).head(5)
-        volatile = latest.sort_values('rolling_std', ascending=False).head(5)
-    
-        col1, col2, col3 = st.columns(3)
-    
-        # 📈 Trending Up
+
+        top_up = latest.sort_values('trend_diff_pct', ascending=False).head(10)
+        top_down = latest.sort_values('trend_diff_pct', ascending=True).head(10)
+
+        col1, col2 = st.columns(2)
+
         with col1:
-            st.markdown("### 📈 Trending Up")
+            st.subheader("📈 Trending Up")
             st.dataframe(
                 top_up[['name', 'price', 'trend_diff_pct']]
                 .rename(columns={
@@ -479,10 +471,9 @@ elif page == "📊 Market Insights":
                 }),
                 use_container_width=True
             )
-    
-        # 📉 Trending Down
+
         with col2:
-            st.markdown("### 📉 Trending Down")
+            st.subheader("📉 Trending Down")
             st.dataframe(
                 top_down[['name', 'price', 'trend_diff_pct']]
                 .rename(columns={
