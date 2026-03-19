@@ -575,7 +575,7 @@ with tab1:
     # FILTERS
     # ═══════════════════════════════════════════════════════════
     
-    st.markdown("### 🔍 Search & Filter Products"))
+    st.markdown("### 🔍 Search & Filter Products")
 
     search_term = st.text_input(
         "🔎 Search by product name",
