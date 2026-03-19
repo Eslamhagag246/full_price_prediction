@@ -665,47 +665,47 @@ if st.session_state.get('show_market_insights', False):
 
 st.markdown("### 🔍 Search & Filter Products")
 
-    search_term = st.text_input(
-        "🔎 Search by product name",
-        placeholder="e.g., iPad, Galaxy, iPhone...",
-        help="Search for products by name"
-    )
-    
-    if search_term:
-        filtered_df = df[df['name'].str.contains(search_term, case=False, na=False)]
-    else:
-        filtered_df = df.copy()
-    
-    # Filters
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        brands = sorted(filtered_df['brand'].unique())
-        selected_brands = st.multiselect("🏷️ Brand", brands, default=[])
-    
-    with col2:
-        websites = sorted(filtered_df['website'].unique())
-        selected_websites = st.multiselect("🛒 Website", websites, default=[])
-    
-    with col3:
-        rams = sorted(filtered_df['ram_gb'].unique())
-        selected_rams = st.multiselect("💾 RAM (GB)", rams, default=[])
-    
-    with col4:
-        storages = sorted(filtered_df['storage_gb'].unique())
-        selected_storages = st.multiselect("💿 Storage (GB)", storages, default=[])
-    
-    # Apply filters
-    if selected_brands:
-        filtered_df = filtered_df[filtered_df['brand'].isin(selected_brands)]
-    if selected_websites:
-        filtered_df = filtered_df[filtered_df['website'].isin(selected_websites)]
-    if selected_rams:
-        filtered_df = filtered_df[filtered_df['ram_gb'].isin(selected_rams)]
-    if selected_storages:
-        filtered_df = filtered_df[filtered_df['storage_gb'].isin(selected_storages)]
-    
-    st.markdown("---")
+search_term = st.text_input(
+    "🔎 Search by product name",
+    placeholder="e.g., iPad, Galaxy, iPhone...",
+    help="Search for products by name"
+)
+
+if search_term:
+    filtered_df = df[df['name'].str.contains(search_term, case=False, na=False)]
+else:
+    filtered_df = df.copy()
+
+# Filters
+col1, col2, col3, col4 = st.columns(4)
+
+with col1:
+    brands = sorted(filtered_df['brand'].unique())
+    selected_brands = st.multiselect("🏷️ Brand", brands, default=[])
+
+with col2:
+    websites = sorted(filtered_df['website'].unique())
+    selected_websites = st.multiselect("🛒 Website", websites, default=[])
+
+with col3:
+    rams = sorted(filtered_df['ram_gb'].unique())
+    selected_rams = st.multiselect("💾 RAM (GB)", rams, default=[])
+
+with col4:
+    storages = sorted(filtered_df['storage_gb'].unique())
+    selected_storages = st.multiselect("💿 Storage (GB)", storages, default=[])
+
+# Apply filters
+if selected_brands:
+    filtered_df = filtered_df[filtered_df['brand'].isin(selected_brands)]
+if selected_websites:
+    filtered_df = filtered_df[filtered_df['website'].isin(selected_websites)]
+if selected_rams:
+    filtered_df = filtered_df[filtered_df['ram_gb'].isin(selected_rams)]
+if selected_storages:
+    filtered_df = filtered_df[filtered_df['storage_gb'].isin(selected_storages)]
+
+st.markdown("---")
     
 
 # ═══════════════════════════════════════════════════════════
