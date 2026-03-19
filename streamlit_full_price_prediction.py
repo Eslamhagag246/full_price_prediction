@@ -547,9 +547,6 @@ with st.sidebar:
     
     if st.button("📈 View Market Insights", use_container_width=True):
         st.session_state.show_market_insights = True
-    
-    if st.button("🔍 Back to Product Forecast", use_container_width=True):
-        st.session_state.show_market_insights = False
     # Load data
     df, filepath = load_data(device_type)
     
@@ -949,85 +946,7 @@ else:
         url = df[df['product_key'] == selected_product]['URL'].iloc[-1]
         if url and str(url) != 'nan':
             st.markdown(f"[🔗 View on {product_info['website'].upper()}]({url})")
-# ═══════════════════════════════════════════════════════════
-# TAB 2: MARKET INSIGHTS
-# ═══════════════════════════════════════════════════════════
-with tab2:
-    st.markdown("## 📈 Market Insights")
-    st.markdown("**Which products had the biggest price changes over the tracked period?**")
-    
-    st.markdown("---")
-    
-    # Calculate price changes
-    price_changes = []
-    
-    for product_key in df['product_key'].unique():
-        pdf = df[df['product_key'] == product_key].copy()
-        
-        if len(pdf) < 2:
-            continue
-        
-        pdf = pdf.sort_values('date')
-        
-        first_price = pdf['price'].iloc[0]
-        last_price = pdf['price'].iloc[-1]
-        
-        if first_price > 0:
-            pct_change = ((last_price - first_price) / first_price) * 100
-            
-            price_changes.append({
-                'Product': pdf['name'].iloc[-1],
-                'Website': pdf['website'].iloc[-1].upper() if 'website' in pdf.columns else 'N/A',
-                'Change %': f"{pct_change:.1f}%",
-                'Current Price': f"EGP {int(last_price):,}",
-                '_sort': pct_change
-            })
-    
-    if price_changes:
-        price_changes_df = pd.DataFrame(price_changes)
-        
-        # Two columns
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.markdown("### 🟢 Biggest Price Drops")
-            drops = price_changes_df.nsmallest(5, '_sort')[['Product', 'Website', 'Change %', 'Current Price']]
-            st.dataframe(drops, use_container_width=True, hide_index=True, height=250)
-        
-        with col2:
-            st.markdown("### 🔴 Biggest Price Rises")
-            rises = price_changes_df.nlargest(5, '_sort')[['Product', 'Website', 'Change %', 'Current Price']]
-            st.dataframe(rises, use_container_width=True, hide_index=True, height=250)
-        
-        st.markdown("---")
-        st.markdown("### ✅ Price Change % Since First Observation")
-        
-        # Bar chart
-        chart_data = price_changes_df.sort_values('_sort', ascending=False).head(15)
-        
-        import plotly.express as px
-        
-        fig = px.bar(
-            chart_data,
-            x='Product',
-            y='_sort',
-            color='_sort',
-            color_continuous_scale=['green', 'yellow', 'red'],
-            color_continuous_midpoint=0,
-            labels={'_sort': 'Change (%)'}
-        )
-        
-        fig.update_layout(
-            xaxis_tickangle=-45,
-            height=500,
-            showlegend=False,
-            xaxis_title=None,
-            yaxis_title='Price Change (%)'
-        )
-        
-        st.plotly_chart(fig, use_container_width=True)
-    else:
-        st.info("Not enough data")
+
 # Footer
 st.markdown("---")
 st.markdown("""
