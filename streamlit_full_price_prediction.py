@@ -2,9 +2,9 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
+import plotly.express as px
 from datetime import timedelta, datetime
 import os
-import io
 
 # ═══════════════════════════════════════════════════════════
 # PAGE CONFIG
@@ -159,18 +159,6 @@ section[data-testid="stSidebar"] * { color: white !important; }
 .signal-title { font-size: 1.3rem; font-weight: 700; margin-bottom: 0.5rem; }
 .signal-desc { font-size: 1rem; margin-bottom: 0.3rem; }
 .signal-detail { font-size: 0.9rem; opacity: 0.8; }
-
-/* Market Insights */
-.insight-card {
-    background: rgba(255,255,255,0.15);
-    border-radius: 10px;
-    padding: 1rem;
-    margin: 0.5rem 0;
-    border: 1px solid rgba(255,255,255,0.2);
-}
-
-.insight-label { font-size: 0.8rem; opacity: 0.8; text-transform: uppercase; }
-.insight-value { font-size: 1.2rem; font-weight: 700; margin-top: 0.3rem; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -199,90 +187,6 @@ def load_data(device_type):
         return None, filepath
 
 
-def calculate_market_insights(df):
-    """Calculate market insights from data"""
-    insights = {}
-    
-    # Overall stats
-    insights['total_products'] = df['product_key'].nunique()
-    insights['total_observations'] = len(df)
-    insights['avg_price'] = df['price'].mean()
-    insights['min_price'] = df['price'].min()
-    insights['max_price'] = df['price'].max()
-    insights['last_update'] = df['date'].max()
-    
-    # Recent trend (last 30 days)
-    recent_date = df['date'].max() - pd.Timedelta(days=30)
-    recent_data = df[df['date'] >= recent_date]
-    
-    if len(recent_data) > 0:
-        old_avg = recent_data[recent_data['date'] <= recent_date + pd.Timedelta(days=15)]['price'].mean()
-        new_avg = recent_data[recent_data['date'] > recent_date + pd.Timedelta(days=15)]['price'].mean()
-        
-        if not np.isnan(old_avg) and not np.isnan(new_avg) and old_avg > 0:
-            insights['trend_pct'] = ((new_avg - old_avg) / old_avg) * 100
-            insights['trend_direction'] = "↗️ Rising" if insights['trend_pct'] > 0 else "↘️ Falling" if insights['trend_pct'] < 0 else "→ Stable"
-        else:
-            insights['trend_pct'] = 0
-            insights['trend_direction'] = "→ Stable"
-    else:
-        insights['trend_pct'] = 0
-        insights['trend_direction'] = "→ Stable"
-    
-    # ✅ NEW: Calculate price changes for each product (last 7 days)
-    price_changes = []
-    
-    for product_key in df['product_key'].unique():
-        pdf = df[df['product_key'] == product_key].copy()
-        
-        if len(pdf) < 5:  # Need at least 5 observations
-            continue
-        
-        pdf = pdf.sort_values('date')
-        
-        # Get last 7 days of data
-        last_week = pdf[pdf['date'] >= pdf['date'].max() - pd.Timedelta(days=7)]
-        
-        if len(last_week) >= 2:
-            old_price = last_week['price'].iloc[0]
-            new_price = last_week['price'].iloc[-1]
-            
-            if old_price > 0:
-                pct_change = ((new_price - old_price) / old_price) * 100
-                
-                price_changes.append({
-                    'product_key': product_key,
-                    'name': pdf['name'].iloc[-1],
-                    'old_price': old_price,
-                    'new_price': new_price,
-                    'change_pct': pct_change,
-                    'change_egp': new_price - old_price
-                })
-    
-    if price_changes:
-        price_changes_df = pd.DataFrame(price_changes)
-        
-        # ✅ Top price drops (best deals)
-        top_drops = price_changes_df.nsmallest(3, 'change_pct')
-        insights['top_drops'] = top_drops.to_dict('records')
-        
-        # ✅ Top price increases (avoid these)
-        top_rises = price_changes_df.nlargest(3, 'change_pct')
-        insights['top_rises'] = top_rises.to_dict('records')
-    else:
-        insights['top_drops'] = []
-        insights['top_rises'] = []
-    
-    # Top brands
-    if 'brand' in df.columns:
-        brand_counts = df.groupby('brand')['product_key'].nunique().sort_values(ascending=False).head(3)
-        insights['top_brands'] = brand_counts.to_dict()
-    else:
-        insights['top_brands'] = {}
-    
-    return insights
-
-
 def generate_buy_signal(result):
     """Generate buy/wait/hold signal based on forecast"""
     last_price = result['last_price']
@@ -300,13 +204,13 @@ def generate_buy_signal(result):
         signal_title = "CAUTION - HIGH PRICE VOLATILITY"
         signal_desc = f"Price fluctuations detected (±{volatility_ratio:.1f}%)"
         signal_detail = "💡 Monitor for a few more days before making a decision"
-    elif change_pct < -2:  # Price dropping - GOOD TIME TO BUY
+    elif change_pct < -2:  # Price dropping - GOOD TO BUY
         signal_type = "buy"
         signal_icon = "💰"
         signal_title = "EXCELLENT BUYING OPPORTUNITY"
         signal_desc = f"AI model predicts a {abs(change_pct):.1f}% price drop"
         signal_detail = f"✓ Best time to buy - Expected savings: EGP {abs(future_price - last_price):,.0f}"
-    elif change_pct > 2:  # Price rising - BAD TIME TO BUY (WAIT)
+    elif change_pct > 2:  # Price rising - WAIT
         signal_type = "wait"
         signal_icon = "⏳"
         signal_title = "NOT RECOMMENDED - PRICE RISING"
@@ -528,6 +432,10 @@ st.markdown("---")
 # SIDEBAR
 # ═══════════════════════════════════════════════════════════
 
+# Initialize session state
+if 'show_market_insights' not in st.session_state:
+    st.session_state.show_market_insights = False
+
 with st.sidebar:
     st.markdown("## 🎯 Select Device Type")
     
@@ -539,16 +447,36 @@ with st.sidebar:
     )
     
     st.markdown("---")
-    if 'show_market_insights' not in st.session_state:
-        st.session_state.show_market_insights = False
     
-    if st.button("📈 View Market Insights", use_container_width=True):
-        st.session_state.show_market_insights = True
+    # Check model
+    model_key = 'tablet' if device_type == "Tablets" else 'mobile'
+    
+    if MODELS_LOADED[model_key]:
+        st.success(f"✅ {device_type} model loaded")
+    else:
+        st.error(f"❌ {device_type} model not found")
+        st.stop()
+    
     # Load data
     df, filepath = load_data(device_type)
     
     if df is None:
         st.stop()
+    
+    # Market Insights Button
+    st.markdown("---")
+    st.markdown("## 📊 Market Insights")
+    
+    if st.button("📈 View Market Insights", use_container_width=True):
+        st.session_state.show_market_insights = True
+        st.rerun()
+    
+    if st.button("🔍 Back to Product Forecast", use_container_width=True):
+        st.session_state.show_market_insights = False
+        st.rerun()
+    
+    st.markdown("---")
+    
     # Dataset Info
     st.markdown("### 📊 Dataset Info")
     st.metric("Data Points", f"{len(df):,}")
@@ -563,16 +491,11 @@ with st.sidebar:
     **Data:** `{filepath}`
     """)
 
-tab1= st.tabs(["🔍 Product Forecast"])
-
-if df is None:
-    st.stop()
-
 # ═══════════════════════════════════════════════════════════
 # CHECK IF SHOWING MARKET INSIGHTS
 # ═══════════════════════════════════════════════════════════
 
-if st.session_state.get('show_market_insights', False):
+if st.session_state.show_market_insights:
     # ═══════════════════════════════════════════════════════════
     # MARKET INSIGHTS PAGE
     # ═══════════════════════════════════════════════════════════
@@ -626,8 +549,6 @@ if st.session_state.get('show_market_insights', False):
         # Chart
         chart_data = price_changes_df.sort_values('_change_pct', ascending=False).head(15)
         
-        import plotly.express as px
-        
         fig = px.bar(
             chart_data,
             x='Product',
@@ -644,8 +565,12 @@ if st.session_state.get('show_market_insights', False):
             showlegend=False,
             plot_bgcolor='white',
             xaxis_title=None,
-            yaxis_title='Price Change (%)'
+            yaxis_title='Price Change (%)',
+            font=dict(family='Inter', size=12)
         )
+        
+        fig.update_xaxes(showgrid=False)
+        fig.update_yaxes(showgrid=True, gridcolor='#f0f0f0')
         
         st.plotly_chart(fig, use_container_width=True)
     else:
@@ -700,7 +625,6 @@ if selected_storages:
     filtered_df = filtered_df[filtered_df['storage_gb'].isin(selected_storages)]
 
 st.markdown("---")
-    
 
 # ═══════════════════════════════════════════════════════════
 # PRODUCT SELECTION
