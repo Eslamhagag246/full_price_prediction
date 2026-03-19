@@ -2,8 +2,9 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
-from datetime import timedelta
+from datetime import timedelta, datetime
 import os
+import io
 
 # ═══════════════════════════════════════════════════════════
 # PAGE CONFIG
@@ -28,7 +29,6 @@ try:
         forecast_product as forecast_tablet_func,
         load_global_model as load_tablet_model
     )
-    # Try to load pre-trained model
     try:
         tablet_model = load_tablet_model()
         MODELS_LOADED['tablet'] = True
@@ -43,7 +43,6 @@ try:
         forecast_product as forecast_mobile_func,
         load_global_model as load_mobile_model
     )
-    # Try to load pre-trained model
     try:
         mobile_model = load_mobile_model()
         MODELS_LOADED['mobile'] = True
@@ -69,27 +68,11 @@ st.markdown("""
     box-shadow: 0 20px 60px rgba(0,0,0,0.3);
 }
 
-h1 {
-    color: #667eea;
-    font-weight: 700;
-    margin-bottom: 0.5rem;
-}
+h1 { color: #667eea; font-weight: 700; margin-bottom: 0.5rem; }
+h2, h3 { color: #4a5568; font-weight: 600; }
 
-h2, h3 {
-    color: #4a5568;
-    font-weight: 600;
-}
-
-.stSelectbox label, .stMultiSelect label {
-    font-weight: 600;
-    color: #2d3748;
-}
-
-div[data-testid="stMetricValue"] {
-    font-size: 1.8rem;
-    font-weight: 700;
-    color: #667eea;
-}
+.stSelectbox label, .stMultiSelect label { font-weight: 600; color: #2d3748; }
+div[data-testid="stMetricValue"] { font-size: 1.8rem; font-weight: 700; color: #667eea; }
 
 .stButton > button {
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -106,13 +89,8 @@ div[data-testid="stMetricValue"] {
     box-shadow: 0 10px 20px rgba(102, 126, 234, 0.4);
 }
 
-section[data-testid="stSidebar"] {
-    background: linear-gradient(180deg, #667eea 0%, #764ba2 100%);
-}
-
-section[data-testid="stSidebar"] * {
-    color: white !important;
-}
+section[data-testid="stSidebar"] { background: linear-gradient(180deg, #667eea 0%, #764ba2 100%); }
+section[data-testid="stSidebar"] * { color: white !important; }
 
 .device-badge {
     display: inline-block;
@@ -123,15 +101,8 @@ section[data-testid="stSidebar"] * {
     margin: 0.2rem;
 }
 
-.badge-tablet {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    color: white;
-}
-
-.badge-mobile {
-    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-    color: white;
-}
+.badge-tablet { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; }
+.badge-mobile { background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); color: white; }
 
 .stat-card {
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -151,10 +122,55 @@ section[data-testid="stSidebar"] * {
     margin-bottom: 0.5rem;
 }
 
-.stat-value {
-    font-size: 1.8rem;
-    font-weight: 700;
+.stat-value { font-size: 1.8rem; font-weight: 700; }
+
+/* Buy/Wait/Hold Signal */
+.signal-banner {
+    padding: 1.5rem;
+    border-radius: 12px;
+    margin: 1.5rem 0;
+    border-left: 5px solid;
 }
+
+.signal-buy {
+    background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%);
+    border-left-color: #28a745;
+    color: #155724;
+}
+
+.signal-wait {
+    background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%);
+    border-left-color: #ffc107;
+    color: #856404;
+}
+
+.signal-hold {
+    background: linear-gradient(135deg, #d1ecf1 0%, #bee5eb 100%);
+    border-left-color: #17a2b8;
+    color: #0c5460;
+}
+
+.signal-volatile {
+    background: linear-gradient(135deg, #f8d7da 0%, #f5c6cb 100%);
+    border-left-color: #dc3545;
+    color: #721c24;
+}
+
+.signal-title { font-size: 1.3rem; font-weight: 700; margin-bottom: 0.5rem; }
+.signal-desc { font-size: 1rem; margin-bottom: 0.3rem; }
+.signal-detail { font-size: 0.9rem; opacity: 0.8; }
+
+/* Market Insights */
+.insight-card {
+    background: rgba(255,255,255,0.15);
+    border-radius: 10px;
+    padding: 1rem;
+    margin: 0.5rem 0;
+    border: 1px solid rgba(255,255,255,0.2);
+}
+
+.insight-label { font-size: 0.8rem; opacity: 0.8; text-transform: uppercase; }
+.insight-value { font-size: 1.2rem; font-weight: 700; margin-top: 0.3rem; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -183,9 +199,108 @@ def load_data(device_type):
         return None, filepath
 
 
-def create_forecast_chart(result, device_type):
-    """Create beautiful forecast chart"""
+def calculate_market_insights(df):
+    """Calculate market insights from data"""
+    insights = {}
+    
+    # Overall stats
+    insights['total_products'] = df['product_key'].nunique()
+    insights['total_observations'] = len(df)
+    insights['avg_price'] = df['price'].mean()
+    insights['min_price'] = df['price'].min()
+    insights['max_price'] = df['price'].max()
+    insights['last_update'] = df['date'].max()
+    
+    # Recent trend (last 30 days)
+    recent_date = df['date'].max() - pd.Timedelta(days=30)
+    recent_data = df[df['date'] >= recent_date]
+    
+    if len(recent_data) > 0:
+        old_avg = recent_data[recent_data['date'] <= recent_date + pd.Timedelta(days=15)]['price'].mean()
+        new_avg = recent_data[recent_data['date'] > recent_date + pd.Timedelta(days=15)]['price'].mean()
+        
+        if not np.isnan(old_avg) and not np.isnan(new_avg) and old_avg > 0:
+            insights['trend_pct'] = ((new_avg - old_avg) / old_avg) * 100
+            insights['trend_direction'] = "↗️ Rising" if insights['trend_pct'] > 0 else "↘️ Falling" if insights['trend_pct'] < 0 else "→ Stable"
+        else:
+            insights['trend_pct'] = 0
+            insights['trend_direction'] = "→ Stable"
+    else:
+        insights['trend_pct'] = 0
+        insights['trend_direction'] = "→ Stable"
+    
+    # Top brands
+    if 'brand' in df.columns:
+        brand_counts = df.groupby('brand')['product_key'].nunique().sort_values(ascending=False).head(3)
+        insights['top_brands'] = brand_counts.to_dict()
+    else:
+        insights['top_brands'] = {}
+    
+    # Most tracked products
+    product_counts = df.groupby('product_key').size().sort_values(ascending=False).head(3)
+    insights['most_tracked'] = product_counts.to_dict()
+    
+    return insights
+
+
+def generate_buy_signal(result):
+    """Generate buy/wait/hold signal based on forecast"""
+    last_price = result['last_price']
+    future_price = result['forecast_prices'][-1]
+    change_pct = ((future_price - last_price) / last_price) * 100
+    mae = result['mae']
+    confidence = result['confidence']
+    
+    # Volatility check
+    volatility_ratio = (mae / last_price) * 100
+    
+    if volatility_ratio > 10:  # High volatility
+        signal_type = "volatile"
+        signal_icon = "⚠️"
+        signal_title = "CAUTION - HIGH PRICE VOLATILITY"
+        signal_desc = f"Price fluctuations detected (±{volatility_ratio:.1f}%)"
+        signal_detail = "💡 Monitor for a few more days before making a decision"
+    elif change_pct < -2:  # Price dropping
+        signal_type = "buy"
+        signal_icon = "💰"
+        signal_title = "EXCELLENT BUYING OPPORTUNITY"
+        signal_desc = f"AI model predicts a {abs(change_pct):.1f}% price drop"
+        signal_detail = f"Expected savings: EGP {abs(future_price - last_price):,.0f}"
+    elif change_pct > 2:  # Price rising
+        signal_type = "wait"
+        signal_icon = "⏳"
+        signal_title = "CONSIDER WAITING"
+        signal_desc = f"Price expected to rise by {change_pct:.1f}% in next 7 days"
+        signal_detail = "⚠️ Not the optimal time to buy"
+    else:  # Stable
+        signal_type = "hold"
+        signal_icon = "📊"
+        signal_title = "STABLE PRICING - BUY ANYTIME"
+        signal_desc = f"Price expected to remain steady (±{abs(change_pct):.1f}%)"
+        signal_detail = f"✓ Low volatility (±{mae:,.0f} EGP)"
+    
+    return {
+        'type': signal_type,
+        'icon': signal_icon,
+        'title': signal_title,
+        'desc': signal_desc,
+        'detail': signal_detail,
+        'confidence': confidence,
+        'current': last_price,
+        'forecast': future_price,
+        'change_pct': change_pct
+    }
+
+
+def create_forecast_chart(result, device_type, date_range=None):
+    """Create forecast chart with optional date range"""
     pdf = result['pdf']
+    
+    # Apply date range filter if specified
+    if date_range:
+        start_date, end_date = date_range
+        pdf = pdf[(pdf['date'] >= start_date) & (pdf['date'] <= end_date)]
+    
     forecast_dates = result['forecast_dates']
     forecast_prices = result['forecast_prices']
     mae = result['mae']
@@ -315,6 +430,52 @@ def create_forecast_chart(result, device_type):
     return fig
 
 
+def create_comparison_chart(results_list, product_names):
+    """Create comparison chart for multiple products"""
+    fig = go.Figure()
+    
+    colors = ['#667eea', '#f093fb', '#f5576c']
+    
+    for idx, (result, name) in enumerate(zip(results_list, product_names)):
+        pdf = result['pdf']
+        forecast_dates = result['forecast_dates']
+        forecast_prices = result['forecast_prices']
+        
+        color = colors[idx % len(colors)]
+        
+        # Historical
+        fig.add_trace(go.Scatter(
+            x=pdf['date'],
+            y=pdf['price'],
+            mode='lines',
+            name=f'{name} (Historical)',
+            line=dict(color=color, width=2),
+            hovertemplate='<b>%{x}</b><br>EGP %{y:,.0f}<extra></extra>'
+        ))
+        
+        # Forecast
+        fig.add_trace(go.Scatter(
+            x=forecast_dates,
+            y=forecast_prices,
+            mode='lines',
+            name=f'{name} (Forecast)',
+            line=dict(color=color, width=2, dash='dash'),
+            hovertemplate='<b>%{x}</b><br>EGP %{y:,.0f}<extra></extra>'
+        ))
+    
+    fig.update_layout(
+        title='Product Comparison',
+        xaxis_title='Date',
+        yaxis_title='Price (EGP)',
+        plot_bgcolor='white',
+        paper_bgcolor='white',
+        height=500,
+        hovermode='x unified'
+    )
+    
+    return fig
+
+
 # ═══════════════════════════════════════════════════════════
 # MAIN APP
 # ═══════════════════════════════════════════════════════════
@@ -339,40 +500,75 @@ with st.sidebar:
     
     st.markdown("---")
     
-    # Check if model is loaded
+    # Check model
     model_key = 'tablet' if device_type == "Tablets" else 'mobile'
     
     if MODELS_LOADED[model_key]:
         st.success(f"✅ {device_type} model loaded")
     else:
         st.error(f"❌ {device_type} model not found")
-        st.info("Please train the model first by running the model file")
-        st.code(f"python {'tablet' if model_key == 'tablet' else 'mobile'}_model_newVersion.py")
         st.stop()
     
     # Load data
     df, filepath = load_data(device_type)
     
-    if df is not None:
-        st.markdown("### 📊 Dataset Info")
-        st.metric("Total Products", f"{df['product_key'].nunique():,}")
-        st.metric("Data Points", f"{len(df):,}")
+    if df is None:
+        st.stop()
+    
+    # Market Insights
+    st.markdown("## 📊 Market Insights")
+    
+    with st.expander("View Insights", expanded=False):
+        insights = calculate_market_insights(df)
         
-        last_update = df['date'].max()
-        st.markdown(f"**Last Updated:** {last_update.strftime('%b %d, %Y')}")
+        st.markdown(f"""
+        <div class="insight-card">
+            <div class="insight-label">Total Products</div>
+            <div class="insight-value">{insights['total_products']:,}</div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        st.markdown(f"""
+        <div class="insight-card">
+            <div class="insight-label">Average Price</div>
+            <div class="insight-value">EGP {insights['avg_price']:,.0f}</div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        st.markdown(f"""
+        <div class="insight-card">
+            <div class="insight-label">Price Range</div>
+            <div class="insight-value">EGP {insights['min_price']:,.0f} - {insights['max_price']:,.0f}</div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        st.markdown(f"""
+        <div class="insight-card">
+            <div class="insight-label">Market Trend (30 Days)</div>
+            <div class="insight-value">{insights['trend_direction']} ({insights['trend_pct']:+.1f}%)</div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        if insights['top_brands']:
+            st.markdown("**📊 Top Brands:**")
+            for brand, count in list(insights['top_brands'].items())[:3]:
+                st.markdown(f"• {brand.title()}: {count} products")
+    
+    st.markdown("---")
+    
+    # Dataset Info
+    st.markdown("### 📊 Dataset Info")
+    st.metric("Data Points", f"{len(df):,}")
+    last_update = df['date'].max()
+    st.markdown(f"**Last Updated:** {last_update.strftime('%b %d, %Y')}")
     
     st.markdown("---")
     st.markdown("### ℹ️ About")
     st.markdown(f"""
-    Currently showing: **{device_type}**
+    **Model:** Global Linear Regression
     
-    Data file: `{filepath}`
-    
-    Model: **Global Linear Regression**
+    **Data:** `{filepath}`
     """)
-
-if df is None:
-    st.stop()
 
 # ═══════════════════════════════════════════════════════════
 # FILTERS
@@ -420,24 +616,6 @@ if selected_rams:
 if selected_storages:
     filtered_df = filtered_df[filtered_df['storage_gb'].isin(selected_storages)]
 
-# Active filters
-active_filters = []
-if search_term:
-    active_filters.append(f"Search: {search_term}")
-if selected_brands:
-    active_filters.append(f"Brands: {', '.join(selected_brands)}")
-if selected_websites:
-    active_filters.append(f"Websites: {', '.join(selected_websites)}")
-if selected_rams:
-    active_filters.append(f"RAM: {', '.join(map(str, selected_rams))}GB")
-if selected_storages:
-    active_filters.append(f"Storage: {', '.join(map(str, selected_storages))}GB")
-
-if active_filters:
-    badge_class = 'badge-tablet' if device_type == "Tablets" else 'badge-mobile'
-    badges_html = ''.join([f'<span class="device-badge {badge_class}">{f}</span>' for f in active_filters])
-    st.markdown(f"**Active Filters:** {badges_html}", unsafe_allow_html=True)
-
 st.markdown("---")
 
 # ═══════════════════════════════════════════════════════════
@@ -462,134 +640,231 @@ product_groups = product_groups.sort_values('n_obs', ascending=False)
 
 st.markdown(f"**Found {len(product_groups)} products**")
 
-selected_product = st.selectbox(
-    f"📱 Select a {device_type[:-1].lower()}",
-    options=product_groups['product_key'].tolist(),
-    format_func=lambda x: (
-        f"{product_groups[product_groups['product_key']==x]['name'].values[0]} | "
-        f"{product_groups[product_groups['product_key']==x]['ram_gb'].values[0]}GB + "
-        f"{product_groups[product_groups['product_key']==x]['storage_gb'].values[0]}GB | "
-        f"{product_groups[product_groups['product_key']==x]['website'].values[0].upper()} | "
-        f"({product_groups[product_groups['product_key']==x]['n_obs'].values[0]} observations)"
-    ),
-    help="Select a product to see price forecast"
-)
+# Product comparison option
+compare_mode = st.checkbox("📊 Compare multiple products", value=False)
 
-# ═══════════════════════════════════════════════════════════
-# FORECAST
-# ═══════════════════════════════════════════════════════════
-
-st.markdown("---")
-
-product_df = df[df['product_key'] == selected_product].copy()
-product_info = product_groups[product_groups['product_key'] == selected_product].iloc[0]
-
-col1, col2 = st.columns([3, 1])
-with col1:
-    st.markdown(f"## 📱 {product_info['name']}")
-with col2:
-    badge_class = 'badge-tablet' if device_type == "Tablets" else 'badge-mobile'
-    st.markdown(f'<span class="device-badge {badge_class}">{device_type[:-1]}</span>', unsafe_allow_html=True)
-
-# Specs
-spec_col1, spec_col2, spec_col3, spec_col4 = st.columns(4)
-spec_col1.metric("🏷️ Brand", product_info['brand'].title())
-spec_col2.metric("💾 RAM", f"{product_info['ram_gb']}GB")
-spec_col3.metric("💿 Storage", f"{product_info['storage_gb']}GB")
-spec_col4.metric("🛒 Website", product_info['website'].upper())
-
-st.markdown("---")
-
-# Generate forecast
-with st.spinner("🤖 Generating AI forecast..."):
-    try:
-        # Use appropriate model and function
-        if device_type == "Tablets":
-            result = forecast_tablet_func(product_df, days_ahead=7, model=tablet_model)
-        else:
-            result = forecast_mobile_func(product_df, days_ahead=7, model=mobile_model)
-    except Exception as e:
-        st.error(f"❌ Error generating forecast: {str(e)}")
-        st.code(str(e))
+if compare_mode:
+    selected_products = st.multiselect(
+        "Select 2-3 products to compare",
+        options=product_groups['product_key'].tolist(),
+        format_func=lambda x: f"{product_groups[product_groups['product_key']==x]['name'].values[0]}",
+        max_selections=3
+    )
+    
+    if len(selected_products) < 2:
+        st.info("Please select at least 2 products to compare")
         st.stop()
+else:
+    selected_product = st.selectbox(
+        f"📱 Select a {device_type[:-1].lower()}",
+        options=product_groups['product_key'].tolist(),
+        format_func=lambda x: (
+            f"{product_groups[product_groups['product_key']==x]['name'].values[0]} | "
+            f"{product_groups[product_groups['product_key']==x]['ram_gb'].values[0]}GB + "
+            f"{product_groups[product_groups['product_key']==x]['storage_gb'].values[0]}GB | "
+            f"{product_groups[product_groups['product_key']==x]['website'].values[0].upper()} | "
+            f"({product_groups[product_groups['product_key']==x]['n_obs'].values[0]} observations)"
+        ),
+        help="Select a product to see price forecast"
+    )
+    selected_products = [selected_product]
 
-# Stats
-stat_col1, stat_col2, stat_col3, stat_col4 = st.columns(4)
-
-with stat_col1:
-    st.markdown(f"""
-    <div class="stat-card">
-        <div class="stat-label">Current Price</div>
-        <div class="stat-value">EGP {result['last_price']:,.0f}</div>
-    </div>
-    """, unsafe_allow_html=True)
-
-with stat_col2:
-    st.markdown(f"""
-    <div class="stat-card">
-        <div class="stat-label">7-Day Forecast</div>
-        <div class="stat-value">EGP {result['forecast_prices'][-1]:,.0f}</div>
-    </div>
-    """, unsafe_allow_html=True)
-
-with stat_col3:
-    change = result['forecast_prices'][-1] - result['last_price']
-    change_pct = (change / result['last_price']) * 100
-    st.markdown(f"""
-    <div class="stat-card">
-        <div class="stat-label">Expected Change</div>
-        <div class="stat-value">{change:+,.0f} EGP</div>
-        <div style="font-size:0.9rem; margin-top:0.3rem;">({change_pct:+.1f}%)</div>
-    </div>
-    """, unsafe_allow_html=True)
-
-with stat_col4:
-    st.markdown(f"""
-    <div class="stat-card">
-        <div class="stat-label">Confidence</div>
-        <div class="stat-value">{result['confidence']}</div>
-        <div style="font-size:0.9rem; margin-top:0.3rem;">({result['n_obs']} days tracked)</div>
-    </div>
-    """, unsafe_allow_html=True)
-
-st.markdown("<br>", unsafe_allow_html=True)
-
-# Chart
-st.plotly_chart(create_forecast_chart(result, device_type), use_container_width=True)
-
-# Forecast table
-st.markdown("### 📅 7-Day Forecast Breakdown")
-
-forecast_table = pd.DataFrame({
-    'Date': [d.strftime('%A, %B %d') for d in result['forecast_dates']],
-    'Forecasted Price': [f"EGP {p:,.0f}" for p in result['forecast_prices']],
-    'Lower Bound': [f"EGP {max(0, p - result['mae']):,.0f}" for p in result['forecast_prices']],
-    'Upper Bound': [f"EGP {(p + result['mae']):,.0f}" for p in result['forecast_prices']]
-})
-
-st.dataframe(forecast_table, use_container_width=True, hide_index=True)
-
-# Stats
 st.markdown("---")
-st.markdown("### 📊 Price Statistics")
 
-stats_col1, stats_col2, stats_col3, stats_col4 = st.columns(4)
-stats_col1.metric("📉 Minimum Price", f"EGP {result['min_price']:,.0f}")
-stats_col2.metric("📊 Average Price", f"EGP {result['avg_price']:,.0f}")
-stats_col3.metric("📈 Maximum Price", f"EGP {result['max_price']:,.0f}")
-stats_col4.metric("🎯 Model Accuracy (MAE)", f"±{result['mae']:,.0f} EGP")
+# ═══════════════════════════════════════════════════════════
+# FORECAST & DISPLAY
+# ═══════════════════════════════════════════════════════════
 
-# URL
-if 'URL' in product_df.columns:
-    url = product_df['URL'].iloc[-1]
-    if url and str(url) != 'nan':
-        st.markdown(f"[🔗 View on {product_info['website'].upper()}]({url})")
+# Generate forecasts
+results = []
+product_infos = []
+
+for product_key in selected_products:
+    product_df = df[df['product_key'] == product_key].copy()
+    product_info = product_groups[product_groups['product_key'] == product_key].iloc[0]
+    product_infos.append(product_info)
+    
+    with st.spinner(f"🤖 Generating forecast for {product_info['name']}..."):
+        try:
+            if device_type == "Tablets":
+                result = forecast_tablet_func(product_df, days_ahead=7, model=tablet_model)
+            else:
+                result = forecast_mobile_func(product_df, days_ahead=7, model=mobile_model)
+            results.append(result)
+        except Exception as e:
+            st.error(f"❌ Error: {str(e)}")
+            st.stop()
+
+# Display comparison or single product
+if compare_mode:
+    st.markdown("## 📊 Product Comparison")
+    
+    # Comparison table
+    comp_data = []
+    for info, result in zip(product_infos, results):
+        comp_data.append({
+            'Product': info['name'],
+            'Current Price': f"EGP {result['last_price']:,.0f}",
+            '7-Day Forecast': f"EGP {result['forecast_prices'][-1]:,.0f}",
+            'Change': f"{((result['forecast_prices'][-1] - result['last_price']) / result['last_price'] * 100):+.1f}%",
+            'Confidence': result['confidence']
+        })
+    
+    st.dataframe(pd.DataFrame(comp_data), use_container_width=True, hide_index=True)
+    
+    # Comparison chart
+    st.plotly_chart(
+        create_comparison_chart(results, [info['name'] for info in product_infos]),
+        use_container_width=True
+    )
+    
+else:
+    # Single product display
+    result = results[0]
+    product_info = product_infos[0]
+    
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        st.markdown(f"## 📱 {product_info['name']}")
+    with col2:
+        badge_class = 'badge-tablet' if device_type == "Tablets" else 'badge-mobile'
+        st.markdown(f'<span class="device-badge {badge_class}">{device_type[:-1]}</span>', unsafe_allow_html=True)
+    
+    # Specs
+    spec_col1, spec_col2, spec_col3, spec_col4 = st.columns(4)
+    spec_col1.metric("🏷️ Brand", product_info['brand'].title())
+    spec_col2.metric("💾 RAM", f"{product_info['ram_gb']}GB")
+    spec_col3.metric("💿 Storage", f"{product_info['storage_gb']}GB")
+    spec_col4.metric("🛒 Website", product_info['website'].upper())
+    
+    st.markdown("---")
+    
+    # Buy/Wait/Hold Signal
+    signal = generate_buy_signal(result)
+    
+    st.markdown(f"""
+    <div class="signal-banner signal-{signal['type']}">
+        <div class="signal-title">{signal['icon']} {signal['title']}</div>
+        <div class="signal-desc">{signal['desc']}</div>
+        <div class="signal-detail">{signal['detail']}</div>
+        <div class="signal-detail" style="margin-top: 0.5rem;">
+            Current: EGP {signal['current']:,.0f} → Forecast: EGP {signal['forecast']:,.0f} | 
+            Confidence: {signal['confidence']}
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Stats cards
+    stat_col1, stat_col2, stat_col3, stat_col4 = st.columns(4)
+    
+    with stat_col1:
+        st.markdown(f"""
+        <div class="stat-card">
+            <div class="stat-label">Current Price</div>
+            <div class="stat-value">EGP {result['last_price']:,.0f}</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with stat_col2:
+        st.markdown(f"""
+        <div class="stat-card">
+            <div class="stat-label">7-Day Forecast</div>
+            <div class="stat-value">EGP {result['forecast_prices'][-1]:,.0f}</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with stat_col3:
+        change = result['forecast_prices'][-1] - result['last_price']
+        change_pct = (change / result['last_price']) * 100
+        st.markdown(f"""
+        <div class="stat-card">
+            <div class="stat-label">Expected Change</div>
+            <div class="stat-value">{change:+,.0f} EGP</div>
+            <div style="font-size:0.9rem; margin-top:0.3rem;">({change_pct:+.1f}%)</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with stat_col4:
+        st.markdown(f"""
+        <div class="stat-card">
+            <div class="stat-label">Confidence</div>
+            <div class="stat-value">{result['confidence']}</div>
+            <div style="font-size:0.9rem; margin-top:0.3rem;">({result['n_obs']} days tracked)</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    st.markdown("<br>", unsafe_allow_html=True)
+    
+    # Date range selector
+    col1, col2, col3 = st.columns([2, 2, 1])
+    
+    with col1:
+        min_date = result['pdf']['date'].min().date()
+        max_date = result['pdf']['date'].max().date()
+        start_date = st.date_input("Start Date", value=min_date, min_value=min_date, max_value=max_date)
+    
+    with col2:
+        end_date = st.date_input("End Date", value=max_date, min_value=min_date, max_value=max_date)
+    
+    with col3:
+        st.markdown("<br>", unsafe_allow_html=True)
+        if st.button("Reset Range"):
+            start_date = min_date
+            end_date = max_date
+    
+    # Chart
+    date_range = (pd.Timestamp(start_date), pd.Timestamp(end_date)) if start_date and end_date else None
+    st.plotly_chart(create_forecast_chart(result, device_type, date_range), use_container_width=True)
+    
+    # Download forecast button
+    forecast_df = pd.DataFrame({
+        'Date': [d.strftime('%Y-%m-%d') for d in result['forecast_dates']],
+        'Forecasted Price (EGP)': result['forecast_prices'],
+        'Lower Bound (EGP)': [max(0, p - result['mae']) for p in result['forecast_prices']],
+        'Upper Bound (EGP)': [p + result['mae'] for p in result['forecast_prices']]
+    })
+    
+    csv = forecast_df.to_csv(index=False)
+    st.download_button(
+        label="📥 Download Forecast (CSV)",
+        data=csv,
+        file_name=f"{product_info['name']}_forecast_{datetime.now().strftime('%Y%m%d')}.csv",
+        mime="text/csv"
+    )
+    
+    # Forecast table
+    st.markdown("### 📅 7-Day Forecast Breakdown")
+    
+    forecast_table = pd.DataFrame({
+        'Date': [d.strftime('%A, %B %d') for d in result['forecast_dates']],
+        'Forecasted Price': [f"EGP {p:,.0f}" for p in result['forecast_prices']],
+        'Lower Bound': [f"EGP {max(0, p - result['mae']):,.0f}" for p in result['forecast_prices']],
+        'Upper Bound': [f"EGP {(p + result['mae']):,.0f}" for p in result['forecast_prices']]
+    })
+    
+    st.dataframe(forecast_table, use_container_width=True, hide_index=True)
+    
+    # Stats
+    st.markdown("---")
+    st.markdown("### 📊 Price Statistics")
+    
+    stats_col1, stats_col2, stats_col3, stats_col4 = st.columns(4)
+    stats_col1.metric("📉 Minimum Price", f"EGP {result['min_price']:,.0f}")
+    stats_col2.metric("📊 Average Price", f"EGP {result['avg_price']:,.0f}")
+    stats_col3.metric("📈 Maximum Price", f"EGP {result['max_price']:,.0f}")
+    stats_col4.metric("🎯 Model Accuracy (MAE)", f"±{result['mae']:,.0f} EGP")
+    
+    # URL
+    if 'URL' in df[df['product_key'] == selected_product].columns:
+        url = df[df['product_key'] == selected_product]['URL'].iloc[-1]
+        if url and str(url) != 'nan':
+            st.markdown(f"[🔗 View on {product_info['website'].upper()}]({url})")
 
 # Footer
 st.markdown("---")
 st.markdown("""
 <div style='text-align: center; color: #718096; font-size: 0.9rem; padding: 1rem;'>
     <p>📱 Price Tracker Pro - Powered by Global Linear Regression</p>
-    <p>One model trained on ALL products for better generalization</p>
+    <p>Smart price forecasting with AI-driven buy/wait/hold signals</p>
 </div>
 """, unsafe_allow_html=True)
