@@ -566,7 +566,7 @@ with st.sidebar:
     **Data:** `{filepath}`
     """)
 
-tab1, tab2 = st.tabs(["🔍 Product Forecast", "📈 Market Insights"])
+tab1= st.tabs(["🔍 Product Forecast"])
 
 if df is None:
     st.stop()
