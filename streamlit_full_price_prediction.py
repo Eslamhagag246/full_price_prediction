@@ -539,9 +539,6 @@ with st.sidebar:
     )
     
     st.markdown("---")
-    # Market Insights Button
-    st.markdown("## 📊 Market Insights")
-    
     if 'show_market_insights' not in st.session_state:
         st.session_state.show_market_insights = False
     
