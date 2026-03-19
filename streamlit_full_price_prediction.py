@@ -554,59 +554,6 @@ with st.sidebar:
     
     if df is None:
         st.stop()
-    
-       # Market Insights
-    st.markdown("## 📊 Market Insights")
-    
-    with st.expander("View Insights", expanded=False):
-        insights = calculate_market_insights(df)
-        
-        st.markdown(f"""
-        <div class="insight-card">
-            <div class="insight-label">Total Products</div>
-            <div class="insight-value">{insights['total_products']:,}</div>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        st.markdown(f"""
-        <div class="insight-card">
-            <div class="insight-label">Average Price</div>
-            <div class="insight-value">EGP {insights['avg_price']:,.0f}</div>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        st.markdown(f"""
-        <div class="insight-card">
-            <div class="insight-label">Price Range</div>
-            <div class="insight-value">EGP {insights['min_price']:,.0f} - {insights['max_price']:,.0f}</div>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        st.markdown(f"""
-        <div class="insight-card">
-            <div class="insight-label">Market Trend (30 Days)</div>
-            <div class="insight-value">{insights['trend_direction']} ({insights['trend_pct']:+.1f}%)</div>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        # ✅ NEW: Top Price Drops (Best Deals)
-        if insights['top_drops']:
-            st.markdown("**💰 Top Price Drops (7 Days):**")
-            for item in insights['top_drops']:
-                st.markdown(f"• {item['name'][:30]}... **{item['change_pct']:.1f}%** ↘️ (EGP {abs(item['change_egp']):,.0f})")
-        
-        # ✅ NEW: Top Price Increases (Avoid)
-        if insights['top_rises']:
-            st.markdown("**⚠️ Top Price Increases (7 Days):**")
-            for item in insights['top_rises']:
-                st.markdown(f"• {item['name'][:30]}... **{item['change_pct']:.1f}%** ↗️ (EGP {abs(item['change_egp']):,.0f})")
-        
-        if insights['top_brands']:
-            st.markdown("**📊 Top Brands:**")
-            for brand, count in list(insights['top_brands'].items())[:3]:
-                st.markdown(f"• {brand.title()}: {count} products")
-    st.markdown("---")
-    
     # Dataset Info
     st.markdown("### 📊 Dataset Info")
     st.metric("Data Points", f"{len(df):,}")
@@ -621,54 +568,136 @@ with st.sidebar:
     **Data:** `{filepath}`
     """)
 
+tab1, tab2 = st.tabs(["🔍 Product Forecast", "📈 Market Insights"])
+
+with tab1:
+    # ═══════════════════════════════════════════════════════════
+    # FILTERS
+    # ═══════════════════════════════════════════════════════════
+    
+    st.markdown("### 🔍 Search & Filter Products"))
+
+    search_term = st.text_input(
+        "🔎 Search by product name",
+        placeholder="e.g., iPad, Galaxy, iPhone...",
+        help="Search for products by name"
+    )
+    
+    if search_term:
+        filtered_df = df[df['name'].str.contains(search_term, case=False, na=False)]
+    else:
+        filtered_df = df.copy()
+    
+    # Filters
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        brands = sorted(filtered_df['brand'].unique())
+        selected_brands = st.multiselect("🏷️ Brand", brands, default=[])
+    
+    with col2:
+        websites = sorted(filtered_df['website'].unique())
+        selected_websites = st.multiselect("🛒 Website", websites, default=[])
+    
+    with col3:
+        rams = sorted(filtered_df['ram_gb'].unique())
+        selected_rams = st.multiselect("💾 RAM (GB)", rams, default=[])
+    
+    with col4:
+        storages = sorted(filtered_df['storage_gb'].unique())
+        selected_storages = st.multiselect("💿 Storage (GB)", storages, default=[])
+    
+    # Apply filters
+    if selected_brands:
+        filtered_df = filtered_df[filtered_df['brand'].isin(selected_brands)]
+    if selected_websites:
+        filtered_df = filtered_df[filtered_df['website'].isin(selected_websites)]
+    if selected_rams:
+        filtered_df = filtered_df[filtered_df['ram_gb'].isin(selected_rams)]
+    if selected_storages:
+        filtered_df = filtered_df[filtered_df['storage_gb'].isin(selected_storages)]
+    
+    st.markdown("---")
+    
 # ═══════════════════════════════════════════════════════════
-# FILTERS
+# TAB 2: MARKET INSIGHTS
 # ═══════════════════════════════════════════════════════════
-
-st.markdown("### 🔍 Search & Filter Products")
-
-search_term = st.text_input(
-    "🔎 Search by product name",
-    placeholder="e.g., iPad, Galaxy, iPhone...",
-    help="Search for products by name"
-)
-
-if search_term:
-    filtered_df = df[df['name'].str.contains(search_term, case=False, na=False)]
-else:
-    filtered_df = df.copy()
-
-# Filters
-col1, col2, col3, col4 = st.columns(4)
-
-with col1:
-    brands = sorted(filtered_df['brand'].unique())
-    selected_brands = st.multiselect("🏷️ Brand", brands, default=[])
-
-with col2:
-    websites = sorted(filtered_df['website'].unique())
-    selected_websites = st.multiselect("🛒 Website", websites, default=[])
-
-with col3:
-    rams = sorted(filtered_df['ram_gb'].unique())
-    selected_rams = st.multiselect("💾 RAM (GB)", rams, default=[])
-
-with col4:
-    storages = sorted(filtered_df['storage_gb'].unique())
-    selected_storages = st.multiselect("💿 Storage (GB)", storages, default=[])
-
-# Apply filters
-if selected_brands:
-    filtered_df = filtered_df[filtered_df['brand'].isin(selected_brands)]
-if selected_websites:
-    filtered_df = filtered_df[filtered_df['website'].isin(selected_websites)]
-if selected_rams:
-    filtered_df = filtered_df[filtered_df['ram_gb'].isin(selected_rams)]
-if selected_storages:
-    filtered_df = filtered_df[filtered_df['storage_gb'].isin(selected_storages)]
-
-st.markdown("---")
-
+with tab2:
+    st.markdown("## 📈 Market Insights")
+    st.markdown("**Which products had the biggest price changes over the tracked period?**")
+    
+    st.markdown("---")
+    
+    # Calculate price changes
+    price_changes = []
+    
+    for product_key in df['product_key'].unique():
+        pdf = df[df['product_key'] == product_key].copy()
+        
+        if len(pdf) < 2:
+            continue
+        
+        pdf = pdf.sort_values('date')
+        
+        first_price = pdf['price'].iloc[0]
+        last_price = pdf['price'].iloc[-1]
+        
+        if first_price > 0:
+            pct_change = ((last_price - first_price) / first_price) * 100
+            
+            price_changes.append({
+                'Product': pdf['name'].iloc[-1],
+                'Website': pdf['website'].iloc[-1].upper() if 'website' in pdf.columns else 'N/A',
+                'Change %': f"{pct_change:.1f}%",
+                'Current Price': f"EGP {int(last_price):,}",
+                '_sort': pct_change
+            })
+    
+    if price_changes:
+        price_changes_df = pd.DataFrame(price_changes)
+        
+        # Two columns
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("### 🟢 Biggest Price Drops")
+            drops = price_changes_df.nsmallest(5, '_sort')[['Product', 'Website', 'Change %', 'Current Price']]
+            st.dataframe(drops, use_container_width=True, hide_index=True, height=250)
+        
+        with col2:
+            st.markdown("### 🔴 Biggest Price Rises")
+            rises = price_changes_df.nlargest(5, '_sort')[['Product', 'Website', 'Change %', 'Current Price']]
+            st.dataframe(rises, use_container_width=True, hide_index=True, height=250)
+        
+        st.markdown("---")
+        st.markdown("### ✅ Price Change % Since First Observation")
+        
+        # Bar chart
+        chart_data = price_changes_df.sort_values('_sort', ascending=False).head(15)
+        
+        import plotly.express as px
+        
+        fig = px.bar(
+            chart_data,
+            x='Product',
+            y='_sort',
+            color='_sort',
+            color_continuous_scale=['green', 'yellow', 'red'],
+            color_continuous_midpoint=0,
+            labels={'_sort': 'Change (%)'}
+        )
+        
+        fig.update_layout(
+            xaxis_tickangle=-45,
+            height=500,
+            showlegend=False,
+            xaxis_title=None,
+            yaxis_title='Price Change (%)'
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.info("Not enough data")
 # ═══════════════════════════════════════════════════════════
 # PRODUCT SELECTION
 # ═══════════════════════════════════════════════════════════
