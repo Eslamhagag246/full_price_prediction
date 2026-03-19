@@ -229,16 +229,56 @@ def calculate_market_insights(df):
         insights['trend_pct'] = 0
         insights['trend_direction'] = "→ Stable"
     
+    # ✅ NEW: Calculate price changes for each product (last 7 days)
+    price_changes = []
+    
+    for product_key in df['product_key'].unique():
+        pdf = df[df['product_key'] == product_key].copy()
+        
+        if len(pdf) < 5:  # Need at least 5 observations
+            continue
+        
+        pdf = pdf.sort_values('date')
+        
+        # Get last 7 days of data
+        last_week = pdf[pdf['date'] >= pdf['date'].max() - pd.Timedelta(days=7)]
+        
+        if len(last_week) >= 2:
+            old_price = last_week['price'].iloc[0]
+            new_price = last_week['price'].iloc[-1]
+            
+            if old_price > 0:
+                pct_change = ((new_price - old_price) / old_price) * 100
+                
+                price_changes.append({
+                    'product_key': product_key,
+                    'name': pdf['name'].iloc[-1],
+                    'old_price': old_price,
+                    'new_price': new_price,
+                    'change_pct': pct_change,
+                    'change_egp': new_price - old_price
+                })
+    
+    if price_changes:
+        price_changes_df = pd.DataFrame(price_changes)
+        
+        # ✅ Top price drops (best deals)
+        top_drops = price_changes_df.nsmallest(3, 'change_pct')
+        insights['top_drops'] = top_drops.to_dict('records')
+        
+        # ✅ Top price increases (avoid these)
+        top_rises = price_changes_df.nlargest(3, 'change_pct')
+        insights['top_rises'] = top_rises.to_dict('records')
+    else:
+        insights['top_drops'] = []
+        insights['top_rises'] = []
+    
     # Top brands
     if 'brand' in df.columns:
         brand_counts = df.groupby('brand')['product_key'].nunique().sort_values(ascending=False).head(3)
         insights['top_brands'] = brand_counts.to_dict()
     else:
         insights['top_brands'] = {}
-    
-    # Most tracked products
-    product_counts = df.groupby('product_key').size().sort_values(ascending=False).head(3)
-    insights['most_tracked'] = product_counts.to_dict()
     
     return insights
 
@@ -260,24 +300,24 @@ def generate_buy_signal(result):
         signal_title = "CAUTION - HIGH PRICE VOLATILITY"
         signal_desc = f"Price fluctuations detected (±{volatility_ratio:.1f}%)"
         signal_detail = "💡 Monitor for a few more days before making a decision"
-    elif change_pct < -2:  # Price dropping
+    elif change_pct < -2:  # Price dropping - GOOD TIME TO BUY
         signal_type = "buy"
         signal_icon = "💰"
         signal_title = "EXCELLENT BUYING OPPORTUNITY"
         signal_desc = f"AI model predicts a {abs(change_pct):.1f}% price drop"
-        signal_detail = f"Expected savings: EGP {abs(future_price - last_price):,.0f}"
-    elif change_pct > 2:  # Price rising
+        signal_detail = f"✓ Best time to buy - Expected savings: EGP {abs(future_price - last_price):,.0f}"
+    elif change_pct > 2:  # Price rising - BAD TIME TO BUY (WAIT)
         signal_type = "wait"
         signal_icon = "⏳"
-        signal_title = "CONSIDER WAITING"
-        signal_desc = f"Price expected to rise by {change_pct:.1f}% in next 7 days"
-        signal_detail = "⚠️ Not the optimal time to buy"
+        signal_title = "NOT RECOMMENDED - PRICE RISING"
+        signal_desc = f"Price expected to increase by {change_pct:.1f}% in next 7 days"
+        signal_detail = f"⚠️ Wait for price to stabilize - Expected cost increase: EGP {abs(future_price - last_price):,.0f}"
     else:  # Stable
         signal_type = "hold"
         signal_icon = "📊"
         signal_title = "STABLE PRICING - BUY ANYTIME"
         signal_desc = f"Price expected to remain steady (±{abs(change_pct):.1f}%)"
-        signal_detail = f"✓ Low volatility (±{mae:,.0f} EGP)"
+        signal_detail = f"✓ Safe to purchase now - Low volatility (±{mae:,.0f} EGP)"
     
     return {
         'type': signal_type,
@@ -515,7 +555,7 @@ with st.sidebar:
     if df is None:
         st.stop()
     
-    # Market Insights
+       # Market Insights
     st.markdown("## 📊 Market Insights")
     
     with st.expander("View Insights", expanded=False):
@@ -549,11 +589,22 @@ with st.sidebar:
         </div>
         """, unsafe_allow_html=True)
         
+        # ✅ NEW: Top Price Drops (Best Deals)
+        if insights['top_drops']:
+            st.markdown("**💰 Top Price Drops (7 Days):**")
+            for item in insights['top_drops']:
+                st.markdown(f"• {item['name'][:30]}... **{item['change_pct']:.1f}%** ↘️ (EGP {abs(item['change_egp']):,.0f})")
+        
+        # ✅ NEW: Top Price Increases (Avoid)
+        if insights['top_rises']:
+            st.markdown("**⚠️ Top Price Increases (7 Days):**")
+            for item in insights['top_rises']:
+                st.markdown(f"• {item['name'][:30]}... **{item['change_pct']:.1f}%** ↗️ (EGP {abs(item['change_egp']):,.0f})")
+        
         if insights['top_brands']:
             st.markdown("**📊 Top Brands:**")
             for brand, count in list(insights['top_brands'].items())[:3]:
                 st.markdown(f"• {brand.title()}: {count} products")
-    
     st.markdown("---")
     
     # Dataset Info
