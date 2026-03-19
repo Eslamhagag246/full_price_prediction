@@ -539,16 +539,17 @@ with st.sidebar:
     )
     
     st.markdown("---")
+    # Market Insights Button
+    st.markdown("## 📊 Market Insights")
     
-    # Check model
-    model_key = 'tablet' if device_type == "Tablets" else 'mobile'
+    if 'show_market_insights' not in st.session_state:
+        st.session_state.show_market_insights = False
     
-    if MODELS_LOADED[model_key]:
-        st.success(f"✅ {device_type} model loaded")
-    else:
-        st.error(f"❌ {device_type} model not found")
-        st.stop()
+    if st.button("📈 View Market Insights", use_container_width=True):
+        st.session_state.show_market_insights = True
     
+    if st.button("🔍 Back to Product Forecast", use_container_width=True):
+        st.session_state.show_market_insights = False
     # Load data
     df, filepath = load_data(device_type)
     
@@ -570,12 +571,99 @@ with st.sidebar:
 
 tab1, tab2 = st.tabs(["🔍 Product Forecast", "📈 Market Insights"])
 
-with tab1:
+if df is None:
+    st.stop()
+
+# ═══════════════════════════════════════════════════════════
+# CHECK IF SHOWING MARKET INSIGHTS
+# ═══════════════════════════════════════════════════════════
+
+if st.session_state.get('show_market_insights', False):
     # ═══════════════════════════════════════════════════════════
-    # FILTERS
+    # MARKET INSIGHTS PAGE
     # ═══════════════════════════════════════════════════════════
     
-    st.markdown("### 🔍 Search & Filter Products")
+    st.markdown("## 📈 Market Insights")
+    st.markdown("**Which products had the biggest price changes over the tracked period?**")
+    
+    # Calculate price changes
+    price_changes = []
+    
+    for product_key in df['product_key'].unique():
+        pdf = df[df['product_key'] == product_key].copy()
+        
+        if len(pdf) < 2:
+            continue
+        
+        pdf = pdf.sort_values('date')
+        first_price = pdf['price'].iloc[0]
+        last_price = pdf['price'].iloc[-1]
+        
+        if first_price > 0:
+            pct_change = ((last_price - first_price) / first_price) * 100
+            
+            price_changes.append({
+                'Product': pdf['name'].iloc[-1],
+                'Website': pdf['website'].iloc[-1].upper() if 'website' in pdf.columns else 'N/A',
+                'Change %': f"{pct_change:.1f}%",
+                'Current Price': f"EGP {int(last_price):,}",
+                '_change_pct': pct_change
+            })
+    
+    if price_changes:
+        price_changes_df = pd.DataFrame(price_changes)
+        
+        # Two columns: Drops vs Rises
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("### 🟢 Biggest Price Drops")
+            top_drops = price_changes_df.nsmallest(5, '_change_pct')[['Product', 'Website', 'Change %', 'Current Price']]
+            st.dataframe(top_drops, use_container_width=True, hide_index=True, height=250)
+        
+        with col2:
+            st.markdown("### 🔴 Biggest Price Rises")
+            top_rises = price_changes_df.nlargest(5, '_change_pct')[['Product', 'Website', 'Change %', 'Current Price']]
+            st.dataframe(top_rises, use_container_width=True, hide_index=True, height=250)
+        
+        st.markdown("---")
+        st.markdown("### ✅ Price Change % Since First Observation")
+        
+        # Chart
+        chart_data = price_changes_df.sort_values('_change_pct', ascending=False).head(15)
+        
+        import plotly.express as px
+        
+        fig = px.bar(
+            chart_data,
+            x='Product',
+            y='_change_pct',
+            color='_change_pct',
+            color_continuous_scale=['#00ff88', '#ffd166', '#ff6b6b'],
+            color_continuous_midpoint=0,
+            labels={'_change_pct': 'Price Change (%)'}
+        )
+        
+        fig.update_layout(
+            xaxis_tickangle=-45,
+            height=500,
+            showlegend=False,
+            plot_bgcolor='white',
+            xaxis_title=None,
+            yaxis_title='Price Change (%)'
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.info("Not enough data to calculate price changes")
+    
+    st.stop()  # Stop here, don't show forecast page
+
+# ═══════════════════════════════════════════════════════════
+# FILTERS (PRODUCT FORECAST PAGE)
+# ═══════════════════════════════════════════════════════════
+
+st.markdown("### 🔍 Search & Filter Products")
 
     search_term = st.text_input(
         "🔎 Search by product name",
