@@ -463,33 +463,83 @@ with st.sidebar:
     if df is None:
         st.stop()
     
-    # Market Insights Button
-    st.markdown("---")
-    st.markdown("## 📊 Market Insights")
-    
-    if st.button("📈 View Market Insights", use_container_width=True):
-        st.session_state.show_market_insights = True
-        st.rerun()
-    
-    if st.button("🔍 Back to Product Forecast", use_container_width=True):
-        st.session_state.show_market_insights = False
-        st.rerun()
-    
+    # Market Insights Section
     st.markdown("---")
     
-    # Dataset Info
-    st.markdown("### 📊 Dataset Info")
-    st.metric("Data Points", f"{len(df):,}")
-    last_update = df['date'].max()
-    st.markdown(f"**Last Updated:** {last_update.strftime('%b %d, %Y')}")
-    
-    st.markdown("---")
-    st.markdown("### ℹ️ About")
-    st.markdown(f"""
-    **Model:** Global Linear Regression
-    
-    **Data:** `{filepath}`
-    """)
+    if not st.session_state.show_market_insights:
+        # Large, prominent Market Insights button
+        st.markdown('<div style="margin: 1rem 0;">', unsafe_allow_html=True)
+        
+        insights_clicked = st.button(
+            "📊 Market Insights",
+            use_container_width=True,
+            key="market_insights_btn"
+        )
+        
+        st.markdown('</div>', unsafe_allow_html=True)
+        
+        # Custom styling for this button
+        st.markdown("""
+        <style>
+        /* Market Insights button styling */
+        button[kind="primary"][key="market_insights_btn"] {
+            background: linear-gradient(135deg, #ff6b6b 0%, #ee5a6f 100%) !important;
+            color: white !important;
+            border: none !important;
+            border-radius: 12px !important;
+            padding: 1rem 1.5rem !important;
+            font-weight: 600 !important;
+            font-size: 1.05rem !important;
+            box-shadow: 0 4px 15px rgba(255, 107, 107, 0.3) !important;
+            transition: all 0.3s ease !important;
+        }
+        button[kind="primary"][key="market_insights_btn"]:hover {
+            transform: translateY(-3px) !important;
+            box-shadow: 0 6px 25px rgba(255, 107, 107, 0.5) !important;
+        }
+        </style>
+        """, unsafe_allow_html=True)
+        
+        if insights_clicked:
+            st.session_state.show_market_insights = True
+            st.rerun()
+            
+    else:
+        # Small, subtle back button
+        st.markdown('<div style="margin: 0.5rem 0;">', unsafe_allow_html=True)
+        
+        back_clicked = st.button(
+            "← Back",
+            use_container_width=True,
+            key="back_btn"
+        )
+        
+        st.markdown('</div>', unsafe_allow_html=True)
+        
+        # Custom styling for back button (smaller, subtle)
+        st.markdown("""
+        <style>
+        /* Back button styling */
+        button[key="back_btn"] {
+            background: rgba(255, 255, 255, 0.1) !important;
+            color: white !important;
+            border: 1px solid rgba(255, 255, 255, 0.2) !important;
+            border-radius: 8px !important;
+            padding: 0.5rem 1rem !important;
+            font-weight: 500 !important;
+            font-size: 0.9rem !important;
+            transition: all 0.3s ease !important;
+        }
+        button[key="back_btn"]:hover {
+            background: rgba(255, 255, 255, 0.15) !important;
+            border-color: rgba(255, 255, 255, 0.3) !important;
+        }
+        </style>
+        """, unsafe_allow_html=True)
+        
+        if back_clicked:
+            st.session_state.show_market_insights = False
+            st.rerun()
 
 # ═══════════════════════════════════════════════════════════
 # CHECK IF SHOWING MARKET INSIGHTS
