@@ -9,6 +9,45 @@ import os
 import warnings
 warnings.filterwarnings('ignore')
 
+def load_and_preprocess_data(filepath='tablets_cleaned_continuous.csv'):
+
+    df = pd.read_csv(filepath)
+
+    # Clean price
+    df['price'] = df['price'].astype(str)
+    df['price'] = df['price'].str.replace('EGP', '', regex=False)
+    df['price'] = df['price'].str.replace(',', '', regex=False)
+    df['price'] = pd.to_numeric(df['price'], errors='coerce')
+    df = df.dropna(subset=['price'])
+
+    # Parse dates
+    df['timestamp'] = pd.to_datetime(df['timestamp'], errors='coerce')
+    df['date'] = df['timestamp'].dt.date
+    df['date'] = pd.to_datetime(df['date'])
+
+    # Create product key
+    df['product_key'] = (
+        df['name'].str.lower().str.strip() + ' ' +
+        df['website'].str.lower() + ' ' +
+        df['ram_gb'].astype(str) + ' ' +
+        df['storage_gb'].astype(str)
+    )
+
+    # Daily aggregation
+    df_daily = df.groupby(['product_key', 'date']).agg({
+        'price': 'mean',
+        'name': 'first',
+        'brand': 'first',
+        'website': 'first',
+        'ram_gb': 'first',
+        'storage_gb': 'first',
+        'URL': 'last',
+        'timestamp': 'first'
+    }).reset_index()
+
+    df_daily = df_daily.sort_values(['product_key', 'date'])
+
+    return df_daily
 
 # FEATURE ENGINEERING
 
@@ -53,10 +92,10 @@ FEATURE_COLS = [
 MODEL_PATH = "tablet_price_model.pkl"
 
 
-def train_global_model( min_obs=10, test_size=0.2):
+def train_global_model(filepath, min_obs=10, test_size=0.2):
     print("Loading data from Supabase...")
     
-    df = load_and_preprocess_data('tablets')
+    df = load_and_preprocess_data(filepath)
 
     X_train_list = []
     y_train_list = []
@@ -232,8 +271,8 @@ if __name__ == "__main__":
     print("="*70)
     print("🚀 TRAINING GLOBAL TABLET PRICE MODEL")
     print("="*70)
-
-    model = train_global_model()
+    filepath = 'tablets_cleaned_continuous.csv'
+    model = train_global_model(filepath)
 
     save_global_model(model)
 
