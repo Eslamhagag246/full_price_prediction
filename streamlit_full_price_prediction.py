@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 import plotly.express as px
+import streamlit as st
 from datetime import timedelta, datetime
 from supabase import create_client
 import os
@@ -19,8 +20,8 @@ st.set_page_config(
 
 # data URL + KEY
 # ═══════════════════════════════════════════════════════════
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+SUPABASE_URL = st.secrets("SUPABASE_URL")
+SUPABASE_KEY = st.secrets("SUPABASE_ANON_KEY")
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 # ═══════════════════════════════════════════════════════════
