@@ -10,7 +10,45 @@ import os
 import warnings
 warnings.filterwarnings('ignore')
 
+# ═══════════════════════════════════════════════════════════
+# DATA LOADING
+# ═══════════════════════════════════════════════════════════
 
+def load_and_preprocess_data(filepath='mobile_cleaned_70K.csv'):
+
+    df = pd.read_csv(filepath)
+
+    df['price'] = df['price'].astype(str)
+    df['price'] = df['price'].str.replace('EGP', '', regex=False)
+    df['price'] = df['price'].str.replace(',', '', regex=False)
+    df['price'] = pd.to_numeric(df['price'], errors='coerce')
+    df = df.dropna(subset=['price'])
+
+    df['timestamp'] = pd.to_datetime(df['timestamp'], errors='coerce')
+    df['date'] = df['timestamp'].dt.date
+    df['date'] = pd.to_datetime(df['date'])
+
+    df['product_key'] = (
+        df['name'].str.lower().str.strip() + ' ' +
+        df['website'].str.lower() + ' ' +
+        df['ram_gb'].astype(str) + ' ' +
+        df['storage_gb'].astype(str)
+    )
+
+    df_daily = df.groupby(['product_key', 'date']).agg({
+        'price': 'mean',
+        'name': 'first',
+        'brand': 'first',
+        'website': 'first',
+        'ram_gb': 'first',
+        'storage_gb': 'first',
+        'URL': 'last',
+        'timestamp': 'first'
+    }).reset_index()
+
+    df_daily = df_daily.sort_values(['product_key', 'date'])
+
+    return df_daily
 # FEATURE ENGINEERING
 def engineer_features(pdf):
 
@@ -53,9 +91,9 @@ FEATURE_COLS = [
 MODEL_PATH = "mobile_price_model.pkl"
 
 
-def train_global_model(min_obs=10, test_size=0.2):
+def train_global_model(filepath ,min_obs=10, test_size=0.2):
 
-    df = load_and_preprocess_data('mobiles')
+    df = load_and_preprocess_data(filepath)
 
     X_all = []
     y_all = []
@@ -241,7 +279,8 @@ if __name__ == "__main__":
     print("="*70)
     print("🚀 TRAINING GLOBAL MOBILE PRICE MODEL")
     print("="*70)
-    model = train_global_model()
+    filepath='mobile_cleaned_70K.csv'
+    model = train_global_model(filepath)
     save_global_model(model)
 
     print("\n✅ Training complete")
