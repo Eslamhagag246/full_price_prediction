@@ -5,7 +5,7 @@ import plotly.graph_objects as go
 import plotly.express as px
 import streamlit as st
 from datetime import timedelta, datetime
-from supabase import create_client
+from supabase import create_client , Client
 import os
 
 # ═══════════════════════════════════════════════════════════
