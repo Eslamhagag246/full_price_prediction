@@ -21,9 +21,11 @@ st.set_page_config(
 # data URL + KEY
 # ═══════════════════════════════════════════════════════════
 SUPABASE_URL = "https://ryiqzurrmvaftbnpiopx.supabase.co"
-SUPABASE_KEY = st.secrets("SUPABASE_ANON_KEY")
+SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ5aXF6dXJybXZhZnRibnBpb3B4Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MzcwMDY5NywiZXhwIjoyMDg5Mjc2Njk3fQ.7uVZj7t93AWOZd3CsU__AZTXQyNDUxM3IN3VWurzG04' 
+if not SUPABASE_URL or not SUPABASE_KEY:
+    raise ValueError("Missing Supabase credentials!")
 
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 # ═══════════════════════════════════════════════════════════
 # IMPORT MODELS
 # ═══════════════════════════════════════════════════════════
