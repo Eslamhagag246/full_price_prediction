@@ -10,6 +10,36 @@ import os
 import warnings
 warnings.filterwarnings('ignore')
 
+
+# FEATURE ENGINEERING
+def engineer_features(pdf):
+
+    pdf = pdf.sort_values('date').copy()
+
+    pdf['day_index'] = (pdf['date'] - pdf['date'].min()).dt.days
+    pdf['dayofweek'] = pdf['date'].dt.dayofweek
+    pdf['day_of_month'] = pdf['date'].dt.day
+    pdf['month'] = pdf['date'].dt.month
+
+    pdf['rolling_avg_3'] = pdf['price'].rolling(3, min_periods=1).mean().shift(1)
+    pdf['rolling_avg_7'] = pdf['price'].rolling(7, min_periods=1).mean().shift(1)
+    pdf['rolling_std_3'] = pdf['price'].rolling(3, min_periods=1).std().shift(1)
+
+    pdf['price_lag_1'] = pdf['price'].shift(1)
+    pdf['price_lag_3'] = pdf['price'].shift(3)
+    pdf['price_lag_7'] = pdf['price'].shift(7)
+    
+    pdf['pct_change_1'] = pdf['price'].pct_change().fillna(0)
+    pdf['pct_change_3'] = pdf['price'].pct_change(3).fillna(0)
+    
+    pdf = pdf.dropna()
+    
+
+    pdf['ram_normalized'] = pdf['ram_gb'] / 16.0
+    pdf['storage_normalized'] = pdf['storage_gb'] / 1024.0
+    pdf['specs_score'] = (pdf['ram_gb'] / 4.0) + (pdf['storage_gb'] / 128.0)
+
+    return pdf
 # GLOBAL MODEL TRAINING WITH EVALUATION
 
 FEATURE_COLS = [
@@ -23,9 +53,9 @@ FEATURE_COLS = [
 MODEL_PATH = "mobile_price_model.pkl"
 
 
-def train_global_model(filepath, min_obs=10, test_size=0.2):
+def train_global_model(min_obs=10, test_size=0.2):
 
-    df = load_and_preprocess_data(filepath)
+    df = load_and_preprocess_data('mobiles')
 
     X_all = []
     y_all = []
@@ -211,10 +241,7 @@ if __name__ == "__main__":
     print("="*70)
     print("🚀 TRAINING GLOBAL MOBILE PRICE MODEL")
     print("="*70)
-
-    filepath = "mobile_cleaned_70K.csv"
-    model = train_global_model(filepath)
-
+    model = train_global_model()
     save_global_model(model)
 
     print("\n✅ Training complete")
