@@ -3,9 +3,7 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 import plotly.express as px
-import streamlit as st
 from datetime import timedelta, datetime
-from supabase import create_client , Client
 import os
 
 # ═══════════════════════════════════════════════════════════
@@ -18,14 +16,6 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# data URL + KEY
-# ═══════════════════════════════════════════════════════════
-SUPABASE_URL = "https://ryiqzurrmvaftbnpiopx.supabase.co"
-SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ5aXF6dXJybXZhZnRibnBpb3B4Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MzcwMDY5NywiZXhwIjoyMDg5Mjc2Njk3fQ.7uVZj7t93AWOZd3CsU__AZTXQyNDUxM3IN3VWurzG04' 
-if not SUPABASE_URL or not SUPABASE_KEY:
-    raise ValueError("Missing Supabase credentials!")
-
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 # ═══════════════════════════════════════════════════════════
 # IMPORT MODELS
 # ═══════════════════════════════════════════════════════════
@@ -176,25 +166,25 @@ section[data-testid="stSidebar"] * { color: white !important; }
 # HELPER FUNCTIONS
 # ═══════════════════════════════════════════════════════════
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=3600)
 def load_data(device_type):
-    """Load data from Supabase instead of CSV"""
-
+    """Load data based on device type"""
+    if device_type == "Tablets":
+        filepath = 'tablets_cleaned_continuous.csv'
+        load_func = load_tablet_data_func
+    else:
+        filepath = 'mobile_cleaned_70K.csv'
+        load_func = load_mobile_data_func
+    
     try:
-        if device_type == "Tablets":
-            df = load_and_preprocess_data('tablets')
-        else:
-            df = load_and_preprocess_data('mobiles')
-
-        if df is None or df.empty:
-            st.error(f"❌ No data found in Supabase for {device_type}")
-            return None, None
-
-        return df, "supabase"
-
+        df = load_func(filepath)
+        return df, filepath
+    except FileNotFoundError:
+        st.error(f"❌ File not found: {filepath}")
+        return None, filepath
     except Exception as e:
-        st.error(f"❌ Error loading data from Supabase: {str(e)}")
-        return None, None
+        st.error(f"❌ Error loading data: {str(e)}")
+        return None, filepath
 
 
 def generate_buy_signal(result):
