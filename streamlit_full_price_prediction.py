@@ -4,6 +4,7 @@ import numpy as np
 import plotly.graph_objects as go
 import plotly.express as px
 from datetime import timedelta, datetime
+from supabase import create_client
 import os
 
 # ═══════════════════════════════════════════════════════════
@@ -16,6 +17,12 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# data URL + KEY
+# ═══════════════════════════════════════════════════════════
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 # ═══════════════════════════════════════════════════════════
 # IMPORT MODELS
 # ═══════════════════════════════════════════════════════════
@@ -166,25 +173,25 @@ section[data-testid="stSidebar"] * { color: white !important; }
 # HELPER FUNCTIONS
 # ═══════════════════════════════════════════════════════════
 
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=300)
 def load_data(device_type):
-    """Load data based on device type"""
-    if device_type == "Tablets":
-        filepath = 'tablets_cleaned_continuous.csv'
-        load_func = load_tablet_data_func
-    else:
-        filepath = 'mobile_cleaned_70K.csv'
-        load_func = load_mobile_data_func
-    
+    """Load data from Supabase instead of CSV"""
+
     try:
-        df = load_func(filepath)
-        return df, filepath
-    except FileNotFoundError:
-        st.error(f"❌ File not found: {filepath}")
-        return None, filepath
+        if device_type == "Tablets":
+            df = load_and_preprocess_data('tablets')
+        else:
+            df = load_and_preprocess_data('mobiles')
+
+        if df is None or df.empty:
+            st.error(f"❌ No data found in Supabase for {device_type}")
+            return None, None
+
+        return df, "supabase"
+
     except Exception as e:
-        st.error(f"❌ Error loading data: {str(e)}")
-        return None, filepath
+        st.error(f"❌ Error loading data from Supabase: {str(e)}")
+        return None, None
 
 
 def generate_buy_signal(result):
