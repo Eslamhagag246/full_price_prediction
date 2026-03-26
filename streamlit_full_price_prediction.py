@@ -22,7 +22,17 @@ st.set_page_config(
 MODELS_LOADED = {'tablet': False, 'mobile': False}
 tablet_model = None
 mobile_model = None
-
+try:
+    from supabase_loader import (
+        load_tablets_from_supabase,
+        load_mobiles_from_supabase,
+        get_latest_update_date
+    )
+    SUPABASE_AVAILABLE = True
+except ImportError as e:
+    st.error(f"❌ Error importing supabase_loader.py: {str(e)}")
+    st.error("Make sure supabase_loader.py is in the same directory!")
+    SUPABASE_AVAILABLE = False
 try:
     from tablet_model_newVersion import (
         load_and_preprocess_data as load_tablet_data_func,
@@ -168,24 +178,32 @@ section[data-testid="stSidebar"] * { color: white !important; }
 
 @st.cache_data(ttl=3600)
 def load_data(device_type):
-    """Load data based on device type"""
-    if device_type == "Tablets":
-        filepath = 'tablets_cleaned_continuous.csv'
-        load_func = load_tablet_data_func
-    else:
-        filepath = 'mobile_cleaned_70K.csv'
-        load_func = load_mobile_data_func
-    
+    if not SUPABASE_AVAILABLE:
+        st.error("❌ Supabase loader not available!")
+        return None, "Supabase"
     try:
-        df = load_func(filepath)
-        return df, filepath
-    except FileNotFoundError:
-        st.error(f"❌ File not found: {filepath}")
-        return None, filepath
+        if device_type == "Tablets":
+            st.info("📊 Loading tablet data from Supabase...")
+            df = load_tablets_from_supabase()
+            source = "Supabase (tablets)"
+        else:
+            st.info("📊 Loading mobile data from Supabase...")
+            df = load_mobiles_from_supabase()
+            source = "Supabase (mobiles)"
+        
+        if df.empty:
+            st.error(f"❌ No {device_type.lower()} data found in Supabase!")
+            st.info("Make sure your scraper has run and data exists in the database.")
+            return None, source
+        
+        st.success(f"✅ Loaded {len(df):,} records from Supabase!")
+        return df, source
+        
     except Exception as e:
-        st.error(f"❌ Error loading data: {str(e)}")
-        return None, filepath
-
+        st.error(f"❌ Error loading data from Supabase: {str(e)}")
+        import traceback
+        st.code(traceback.format_exc())
+        return None, "Supabase"
 
 def generate_buy_signal(result):
     """Generate buy/wait/hold signal based on forecast"""
