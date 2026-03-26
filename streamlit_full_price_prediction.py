@@ -25,9 +25,7 @@ mobile_model = None
 try:
     from supabase_loader import (
         load_tablets_from_supabase,
-        load_mobiles_from_supabase,
-        get_latest_update_date
-    )
+        load_mobiles_from_supabase)
     SUPABASE_AVAILABLE = True
 except ImportError as e:
     st.error(f"❌ Error importing supabase_loader.py: {str(e)}")
