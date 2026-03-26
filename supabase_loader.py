@@ -200,53 +200,7 @@ def load_and_preprocess_data(filepath='tablets'):
 # ═══════════════════════════════════════════════════════════
 # TEST FUNCTION
 # ═══════════════════════════════════════════════════════════
-
 if __name__ == "__main__":
-    print("="*60)
-    print("🧪 TESTING SUPABASE DATA LOADER")
-    print("="*60)
-    print()
-    
-    # Test tablets
-    print("📱 Testing tablets...")
-    tablets_df = load_tablets_from_supabase()
-    if not tablets_df.empty:
-        print(f"✅ Loaded {len(tablets_df):,} tablet records")
-        print(f"   Unique products: {tablets_df['product_key'].nunique()}")
-        print(f"   Date range: {tablets_df['date'].min()} to {tablets_df['date'].max()}")
-        print("\nSample data:")
-        print(tablets_df.head())
-    else:
-        print("❌ No tablet data")
-    
-    print()
-    
-    # Test mobiles
-    print("📱 Testing mobiles...")
-    mobiles_df = load_mobiles_from_supabase()
-    if not mobiles_df.empty:
-        print(f"✅ Loaded {len(mobiles_df):,} mobile records")
-        print(f"   Unique products: {mobiles_df['product_key'].nunique()}")
-        print(f"   Date range: {mobiles_df['date'].min()} to {mobiles_df['date'].max()}")
-        print("\nSample data:")
-        print(mobiles_df.head())
-    else:
-        print("❌ No mobile data")
-    
-    print()
-    
-    # Test compatibility wrapper
-    print("🔄 Testing compatibility wrapper...")
-    try:
-        df = load_and_preprocess_data('tablets')
-        print(f"✅ Wrapper works! Loaded {len(df):,} records")
-    except Exception as e:
-        print(f"❌ Wrapper failed: {e}")
-    
-    print()
-    print("="*60)
-    print("✅ TESTING COMPLETE")
-    print("="*60)f __name__ == "__main__":
     print("="*60)
     print("🧪 TESTING SUPABASE DATA LOADER")
     print("="*60)
@@ -298,3 +252,4 @@ if __name__ == "__main__":
     print("\n" + "="*60)
     print("✅ TESTING COMPLETE")
     print("="*60)
+ 
