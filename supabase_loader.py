@@ -118,7 +118,6 @@ def load_mobiles_from_supabase():
         mobile_product_ids = products_df['id'].tolist()
         prices_df = prices_df[prices_df['product_id'].isin(mobile_product_ids)]
         print(f"   ✓ Filtered to {len(prices_df):,} mobile price records")
-        s
         df = prices_df.merge(
             products_df[['id', 'name', 'brand', 'website', 'ram_gb', 'storage_gb', 'url']],
             left_on='product_id',
