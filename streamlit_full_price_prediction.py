@@ -25,9 +25,7 @@ mobile_model = None
 try:
     from supabase_loader import (
         load_tablets_from_supabase,
-        load_mobiles_from_supabase,
-        get_product_recommendation)
-    
+        load_mobiles_from_supabase)
     SUPABASE_AVAILABLE = True
 except ImportError as e:
     st.error(f"❌ Error importing supabase_loader.py: {str(e)}")
@@ -206,6 +204,7 @@ def load_data(device_type):
         return None, "Supabase"
 
 def generate_buy_signal(result):
+    """Generate buy/wait/hold signal based on forecast"""
     last_price = result['last_price']
     future_price = result['forecast_prices'][-1]
     change_pct = ((future_price - last_price) / last_price) * 100
@@ -254,6 +253,7 @@ def generate_buy_signal(result):
 
 
 def create_forecast_chart(result, device_type, date_range=None):
+    """Create forecast chart with optional date range"""
     pdf = result['pdf']
     
     # Apply date range filter if specified
@@ -391,6 +391,7 @@ def create_forecast_chart(result, device_type, date_range=None):
 
 
 def create_comparison_chart(results_list, product_names):
+    """Create comparison chart for multiple products"""
     fig = go.Figure()
     
     colors = ['#667eea', '#f093fb', '#f5576c']
@@ -439,54 +440,50 @@ def create_comparison_chart(results_list, product_names):
 # MAIN APP
 # ═══════════════════════════════════════════════════════════
 
-st.markdown("# 📱 Price Tracker Pro")
-st.markdown("### 🤖 AI-Powered Price Forecasting & Recommender System")
+st.title("📱 Price Tracker Pro")
+st.markdown("**Track & Forecast Prices for Tablets & Mobile Phones**")
+st.markdown("---")
+
 # ═══════════════════════════════════════════════════════════
 # SIDEBAR
 # ═══════════════════════════════════════════════════════════
 
+# Initialize session state
 if 'show_market_insights' not in st.session_state:
     st.session_state.show_market_insights = False
 
 with st.sidebar:
-    st.markdown("## ⚙️ Settings")
+    st.markdown("## 🎯 Select Device Type")
     
     device_type = st.radio(
-        "📦 Device Type",
-        options=["Tablets", "Mobiles"]
+        "Choose category:",
+        options=["Tablets", "Mobile Phones"],
+        index=0,
+        label_visibility="collapsed"
     )
     
     st.markdown("---")
-    st.markdown("### 🎯 Mode")
     
-    mode = st.radio(
-        "Select Mode",
-        options=["🔮 Price Forecast", "🎯 Best Deal Finder"]
-    )
-    
+    # Check model
     model_key = 'tablet' if device_type == "Tablets" else 'mobile'
     
-    if mode == "🔮 Price Forecast" and not MODELS_LOADED[model_key]:
+    if MODELS_LOADED[model_key]:
+        st.success(f"✅ {device_type} model loaded")
+    else:
         st.error(f"❌ {device_type} model not found")
         st.stop()
-
-    df, source = load_data(device_type)
-
-    if df is None or df.empty:
-        st.error(f"❌ No {device_type.lower()} data found!")
+    
+    # Load data
+    df, filepath = load_data(device_type)
+    
+    if df is None:
         st.stop()
-
-    st.markdown("---")
-    st.markdown("### 📊 Dataset Info")
-    st.metric("Total Products", f"{df['product_key'].nunique():,}")
-    st.metric("Data Points", f"{len(df):,}")
-    last_update = df['date'].max()
-    st.markdown(f"**Last Updated:** {last_update.strftime('%b %d, %Y')}")
-    st.success(f"📡 {source}")
-
+    
+    # Market Insights Section
     st.markdown("---")
     
     if not st.session_state.show_market_insights:
+        # Large, prominent Market Insights button
         st.markdown('<div style="margin: 1rem 0;">', unsafe_allow_html=True)
         
         insights_clicked = st.button(
@@ -497,8 +494,10 @@ with st.sidebar:
         
         st.markdown('</div>', unsafe_allow_html=True)
         
+        # Custom styling for this button
         st.markdown("""
         <style>
+        /* Market Insights button styling */
         button[kind="primary"][key="market_insights_btn"] {
             background: linear-gradient(135deg, #ff6b6b 0%, #ee5a6f 100%) !important;
             color: white !important;
@@ -522,6 +521,7 @@ with st.sidebar:
             st.rerun()
             
     else:
+        # Small, subtle back button
         st.markdown('<div style="margin: 0.5rem 0;">', unsafe_allow_html=True)
         
         back_clicked = st.button(
@@ -532,8 +532,10 @@ with st.sidebar:
         
         st.markdown('</div>', unsafe_allow_html=True)
         
+        # Custom styling for back button (smaller, subtle)
         st.markdown("""
         <style>
+        /* Back button styling */
         button[key="back_btn"] {
             background: rgba(255, 255, 255, 0.1) !important;
             color: white !important;
@@ -555,10 +557,19 @@ with st.sidebar:
             st.session_state.show_market_insights = False
             st.rerun()
 
+# ═══════════════════════════════════════════════════════════
+# CHECK IF SHOWING MARKET INSIGHTS
+# ═══════════════════════════════════════════════════════════
+
 if st.session_state.show_market_insights:
+    # ═══════════════════════════════════════════════════════════
+    # MARKET INSIGHTS PAGE
+    # ═══════════════════════════════════════════════════════════
+    
     st.markdown("## 📈 Market Insights")
     st.markdown("**Which products had the biggest price changes over the tracked period?**")
     
+    # Calculate price changes
     price_changes = []
     
     for product_key in df['product_key'].unique():
@@ -585,6 +596,7 @@ if st.session_state.show_market_insights:
     if price_changes:
         price_changes_df = pd.DataFrame(price_changes)
         
+        # Two columns: Drops vs Rises
         col1, col2 = st.columns(2)
         
         with col1:
@@ -600,6 +612,7 @@ if st.session_state.show_market_insights:
         st.markdown("---")
         st.markdown("### ✅ Price Change % Since First Observation")
         
+        # Chart
         chart_data = price_changes_df.sort_values('_change_pct', ascending=False).head(15)
         
         fig = px.bar(
@@ -629,7 +642,11 @@ if st.session_state.show_market_insights:
     else:
         st.info("Not enough data to calculate price changes")
     
-    st.stop()
+    st.stop()  # Stop here, don't show forecast page
+
+# ═══════════════════════════════════════════════════════════
+# FILTERS (PRODUCT FORECAST PAGE)
+# ═══════════════════════════════════════════════════════════
 
 st.markdown("### 🔍 Search & Filter Products")
 
@@ -644,6 +661,7 @@ if search_term:
 else:
     filtered_df = df.copy()
 
+# Filters
 col1, col2, col3, col4 = st.columns(4)
 
 with col1:
@@ -662,6 +680,7 @@ with col4:
     storages = sorted(filtered_df['storage_gb'].unique())
     selected_storages = st.multiselect("💿 Storage (GB)", storages, default=[])
 
+# Apply filters
 if selected_brands:
     filtered_df = filtered_df[filtered_df['brand'].isin(selected_brands)]
 if selected_websites:
@@ -671,27 +690,45 @@ if selected_rams:
 if selected_storages:
     filtered_df = filtered_df[filtered_df['storage_gb'].isin(selected_storages)]
 
+st.markdown("---")
+
+# ═══════════════════════════════════════════════════════════
+# PRODUCT SELECTION
+# ═══════════════════════════════════════════════════════════
+
 if filtered_df.empty:
     st.warning("⚠️ No products found. Try different filters.")
     st.stop()
 
-st.markdown("---")
+product_groups = filtered_df.groupby('product_key').agg({
+    'name': 'first',
+    'brand': 'first',
+    'website': 'first',
+    'ram_gb': 'first',
+    'storage_gb': 'first',
+    'price': 'count'
+}).reset_index()
 
-if mode == "🔮 Price Forecast":
-    product_groups = filtered_df.groupby('product_key').agg({
-        'name': 'first',
-        'brand': 'first',
-        'website': 'first',
-        'ram_gb': 'first',
-        'storage_gb': 'first',
-        'price': 'count'
-    }).reset_index()
+product_groups.columns = ['product_key', 'name', 'brand', 'website', 'ram_gb', 'storage_gb', 'n_obs']
+product_groups = product_groups.sort_values('n_obs', ascending=False)
+
+st.markdown(f"**Found {len(product_groups)} products**")
+
+# Product comparison option
+compare_mode = st.checkbox("📊 Compare multiple products", value=False)
+
+if compare_mode:
+    selected_products = st.multiselect(
+        "Select 2-3 products to compare",
+        options=product_groups['product_key'].tolist(),
+        format_func=lambda x: f"{product_groups[product_groups['product_key']==x]['name'].values[0]}",
+        max_selections=3
+    )
     
-    product_groups.columns = ['product_key', 'name', 'brand', 'website', 'ram_gb', 'storage_gb', 'n_obs']
-    product_groups = product_groups.sort_values('n_obs', ascending=False)
-    
-    st.markdown(f"**Found {len(product_groups)} products**")
-    
+    if len(selected_products) < 2:
+        st.info("Please select at least 2 products to compare")
+        st.stop()
+else:
     selected_product = st.selectbox(
         f"📱 Select a {device_type[:-1].lower()}",
         options=product_groups['product_key'].tolist(),
@@ -701,47 +738,195 @@ if mode == "🔮 Price Forecast":
             f"{product_groups[product_groups['product_key']==x]['storage_gb'].values[0]}GB | "
             f"{product_groups[product_groups['product_key']==x]['website'].values[0].upper()} | "
             f"({product_groups[product_groups['product_key']==x]['n_obs'].values[0]} observations)"
-        )
+        ),
+        help="Select a product to see price forecast"
     )
+    selected_products = [selected_product]
+
+st.markdown("---")
+
+# ═══════════════════════════════════════════════════════════
+# FORECAST & DISPLAY
+# ═══════════════════════════════════════════════════════════
+
+# Generate forecasts
+results = []
+product_infos = []
+
+for product_key in selected_products:
+    product_df = df[df['product_key'] == product_key].copy()
+    product_info = product_groups[product_groups['product_key'] == product_key].iloc[0]
+    product_infos.append(product_info)
+    
+    with st.spinner(f"🤖 Generating forecast for {product_info['name']}..."):
+        try:
+            if device_type == "Tablets":
+                result = forecast_tablet_func(product_df, days_ahead=7, model=tablet_model)
+            else:
+                result = forecast_mobile_func(product_df, days_ahead=7, model=mobile_model)
+            results.append(result)
+        except Exception as e:
+            st.error(f"❌ Error: {str(e)}")
+            st.stop()
+
+# Display comparison or single product
+if compare_mode:
+    st.markdown("## 📊 Product Comparison")
+    
+    # Comparison table
+    comp_data = []
+    for info, result in zip(product_infos, results):
+        comp_data.append({
+            'Product': info['name'],
+            'Current Price': f"EGP {result['last_price']:,.0f}",
+            '7-Day Forecast': f"EGP {result['forecast_prices'][-1]:,.0f}",
+            'Change': f"{((result['forecast_prices'][-1] - result['last_price']) / result['last_price'] * 100):+.1f}%",
+            'Confidence': result['confidence']
+        })
+    
+    st.dataframe(pd.DataFrame(comp_data), use_container_width=True, hide_index=True)
+    
+    # Comparison chart
+    st.plotly_chart(
+        create_comparison_chart(results, [info['name'] for info in product_infos]),
+        use_container_width=True
+    )
+    
+else:
+    # Single product display
+    result = results[0]
+    product_info = product_infos[0]
+    
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        st.markdown(f"## 📱 {product_info['name']}")
+    with col2:
+        badge_class = 'badge-tablet' if device_type == "Tablets" else 'badge-mobile'
+        st.markdown(f'<span class="device-badge {badge_class}">{device_type[:-1]}</span>', unsafe_allow_html=True)
+    
+    # Specs
+    spec_col1, spec_col2, spec_col3, spec_col4 = st.columns(4)
+    spec_col1.metric("🏷️ Brand", product_info['brand'].title())
+    spec_col2.metric("💾 RAM", f"{product_info['ram_gb']}GB")
+    spec_col3.metric("💿 Storage", f"{product_info['storage_gb']}GB")
+    spec_col4.metric("🛒 Website", product_info['website'].upper())
     
     st.markdown("---")
     
-    product_df = df[df['product_key'] == selected_product].copy()
-    product_info = product_groups[product_groups['product_key'] == selected_product].iloc[0]
+    # Buy/Wait/Hold Signal
+    signal = generate_buy_signal(result)
     
-    with st.spinner(f"🤖 Generating forecast for {product_info['name']}..."):
-        if device_type == "Tablets":
-            result = forecast_tablet_func(product_df, days_ahead=7, model=tablet_model)
-        else:
-            result = forecast_mobile_func(product_df, days_ahead=7, model=mobile_model)
+    st.markdown(f"""
+    <div class="signal-banner signal-{signal['type']}">
+        <div class="signal-title">{signal['icon']} {signal['title']}</div>
+        <div class="signal-desc">{signal['desc']}</div>
+        <div class="signal-detail">{signal['detail']}</div>
+        <div class="signal-detail" style="margin-top: 0.5rem;">
+            Current: EGP {signal['current']:,.0f} → Forecast: EGP {signal['forecast']:,.0f} | 
+            Confidence: {signal['confidence']}
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
     
-    st.markdown(f"## 📱 {product_info['name']}")
-    st.plotly_chart(create_forecast_chart(result, device_type), use_container_width=True)
-
-elif mode == "🎯 Best Deal Finder":
-    st.markdown("## 🎯 Find the Best Deal")
+    # Stats cards
+    stat_col1, stat_col2, stat_col3, stat_col4 = st.columns(4)
     
-    unique_products = filtered_df.groupby(['name', 'ram_gb', 'storage_gb']).size().reset_index(name='website_count')
+    with stat_col1:
+        st.markdown(f"""
+        <div class="stat-card">
+            <div class="stat-label">Current Price</div>
+            <div class="stat-value">EGP {result['last_price']:,.0f}</div>
+        </div>
+        """, unsafe_allow_html=True)
     
-    selected_idx = st.selectbox(
-        f"📱 Select a {device_type[:-1].lower()}",
-        options=range(len(unique_products)),
-        format_func=lambda x: f"{unique_products.iloc[x]['name']}"
+    with stat_col2:
+        st.markdown(f"""
+        <div class="stat-card">
+            <div class="stat-label">7-Day Forecast</div>
+            <div class="stat-value">EGP {result['forecast_prices'][-1]:,.0f}</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with stat_col3:
+        change = result['forecast_prices'][-1] - result['last_price']
+        change_pct = (change / result['last_price']) * 100
+        st.markdown(f"""
+        <div class="stat-card">
+            <div class="stat-label">Expected Change</div>
+            <div class="stat-value">{change:+,.0f} EGP</div>
+            <div style="font-size:0.9rem; margin-top:0.3rem;">({change_pct:+.1f}%)</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with stat_col4:
+        st.markdown(f"""
+        <div class="stat-card">
+            <div class="stat-label">Confidence</div>
+            <div class="stat-value">{result['confidence']}</div>
+            <div style="font-size:0.9rem; margin-top:0.3rem;">({result['n_obs']} days tracked)</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    st.markdown("<br>", unsafe_allow_html=True)
+    
+    # Date range selector
+    col1, col2, col3 = st.columns([2, 2, 1])
+    
+    with col1:
+        min_date = result['pdf']['date'].min().date()
+        max_date = result['pdf']['date'].max().date()
+        start_date = st.date_input("Start Date", value=min_date, min_value=min_date, max_value=max_date)
+    
+    with col2:
+        end_date = st.date_input("End Date", value=max_date, min_value=min_date, max_value=max_date)
+    
+    with col3:
+        st.markdown("<br>", unsafe_allow_html=True)
+        if st.button("Reset Range"):
+            start_date = min_date
+            end_date = max_date
+    
+    # Chart
+    date_range = (pd.Timestamp(start_date), pd.Timestamp(end_date)) if start_date and end_date else None
+    st.plotly_chart(create_forecast_chart(result, device_type, date_range), use_container_width=True)
+    
+    # Download forecast button
+    forecast_df = pd.DataFrame({
+        'Date': [d.strftime('%Y-%m-%d') for d in result['forecast_dates']],
+        'Forecasted Price (EGP)': result['forecast_prices'],
+        'Lower Bound (EGP)': [max(0, p - result['mae']) for p in result['forecast_prices']],
+        'Upper Bound (EGP)': [p + result['mae'] for p in result['forecast_prices']]
+    })
+    
+    csv = forecast_df.to_csv(index=False)
+    st.download_button(
+        label="📥 Download Forecast (CSV)",
+        data=csv,
+        file_name=f"{product_info['name']}_forecast_{datetime.now().strftime('%Y%m%d')}.csv",
+        mime="text/csv"
     )
     
-    selected_product = unique_products.iloc[selected_idx]
+    # Forecast table
+    st.markdown("### 📅 7-Day Forecast Breakdown")
     
-    recommendation = get_product_recommendation(
-        name=selected_product['name'],
-        ram_gb=selected_product['ram_gb'],
-        storage_gb=selected_product['storage_gb'],
-        category=device_type.lower()[:-1],
-        df=df
-    )
+    forecast_table = pd.DataFrame({
+        'Date': [d.strftime('%A, %B %d') for d in result['forecast_dates']],
+        'Forecasted Price': [f"EGP {p:,.0f}" for p in result['forecast_prices']],
+        'Lower Bound': [f"EGP {max(0, p - result['mae']):,.0f}" for p in result['forecast_prices']],
+        'Upper Bound': [f"EGP {(p + result['mae']):,.0f}" for p in result['forecast_prices']]
+    })
     
-    st.markdown(f"## 📱 {selected_product['name']}")
-    st.markdown(f"### 🏆 {recommendation['best_website']}")
-    st.markdown(f"### 💰 EGP {recommendation['best_price']:,.0f}")
+    st.dataframe(forecast_table, use_container_width=True, hide_index=True)
+    
+    # Stats
+    st.markdown("---")
+    st.markdown("### 📊 Price Statistics")
+    
+    stats_col1, stats_col2, stats_col3, stats_col4 = st.columns(4)
+    stats_col1.metric("📉 Minimum Price", f"EGP {result['min_price']:,.0f}")
+    stats_col2.metric("📊 Average Price", f"EGP {result['avg_price']:,.0f}")
+    stats_col3.metric("📈 Maximum Price", f"EGP {result['max_price']:,.0f}")
+    stats_col4.metric("🎯 Model Accuracy (MAE)", f"±{result['mae']:,.0f} EGP")
     
     # URL
     if 'URL' in df[df['product_key'] == selected_product].columns:
