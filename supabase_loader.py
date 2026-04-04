@@ -45,7 +45,7 @@ def fetch_all(table_name):
 # ═══════════════════════════════════════════════════════════
 # LOAD TABLETS
 # ═══════════════════════════════════════════════════════════
-
+@st.cache_data(ttl=3600)
 def load_tablets_from_supabase():
     try:
         print("📊 Loading tablets from Supabase...")
@@ -114,7 +114,7 @@ def load_tablets_from_supabase():
 # ═══════════════════════════════════════════════════════════
 # LOAD MOBILES
 # ═══════════════════════════════════════════════════════════
-
+@st.cache_data(ttl=3600)
 def load_mobiles_from_supabase():
     try:
         print("📊 Loading mobiles from Supabase...")
@@ -183,7 +183,7 @@ def load_mobiles_from_supabase():
 # ═══════════════════════════════════════════════════════════
 # COMPATIBILITY WRAPPER
 # ═══════════════════════════════════════════════════════════
-
+@st.cache_data(ttl=3600)
 def load_and_preprocess_data(filepath='tablets'):
 
     if 'tablet' in filepath.lower():
