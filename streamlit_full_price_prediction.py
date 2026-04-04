@@ -19,7 +19,7 @@ st.set_page_config(
 # ═══════════════════════════════════════════════════════════
 # IMPORT MODELS
 # ═══════════════════════════════════════════════════════════
-from supabase_loader_OPTIMIZED import (
+from supabase_loader import (
     load_tablets_from_supabase,
     load_mobiles_from_supabase,
     get_product_recommendation
