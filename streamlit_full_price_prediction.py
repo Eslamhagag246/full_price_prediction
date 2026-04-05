@@ -182,11 +182,11 @@ def load_data(device_type):
     try:
         if device_type == "Tablets":
             st.info("📊 Loading tablet data from Supabase...")
-            df_full, df,filepath = load_and_preprocess_data("tablets")
+            df_full, df = load_and_preprocess_data("tablets")
             source = "Supabase (tablets)"
         else:
             st.info("📊 Loading mobile data from Supabase...")
-            df_full, df,filepath = load_and_preprocess_data("mobiles")
+            df_full, df = load_and_preprocess_data("mobiles")
             source = "Supabase (mobiles)"
 
         if df.empty:
@@ -473,7 +473,7 @@ with st.sidebar:
         st.stop()
     
     # Load data
-    df, filepath = load_data(device_type)
+    df_full,df, filepath = load_data(device_type)
     
     if df is None:
         st.stop()
