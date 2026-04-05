@@ -173,35 +173,34 @@ section[data-testid="stSidebar"] * { color: white !important; }
 # ═══════════════════════════════════════════════════════════
 # HELPER FUNCTIONS
 # ═══════════════════════════════════════════════════════════
-
 @st.cache_data(ttl=3600)
 def load_data(device_type):
     if not SUPABASE_AVAILABLE:
         st.error("❌ Supabase loader not available!")
-        return None, "Supabase"
+        return None, None, "Supabase"
+
     try:
         if device_type == "Tablets":
             st.info("📊 Loading tablet data from Supabase...")
-            df = load_tablets_from_supabase()
+            df_full, df = load_and_preprocess_data("tablets")
             source = "Supabase (tablets)"
         else:
             st.info("📊 Loading mobile data from Supabase...")
-            df = load_mobiles_from_supabase()
+            df_full, df = load_and_preprocess_data("mobiles")
             source = "Supabase (mobiles)"
-        
+
         if df.empty:
             st.error(f"❌ No {device_type.lower()} data found in Supabase!")
-            st.info("Make sure your scraper has run and data exists in the database.")
-            return None, source
-        
-        st.success(f"✅ Loaded {len(df):,} records from Supabase!")
-        return df, source
-        
+            return None, None, source
+
+        st.success(f"✅ Loaded {len(df_full):,} total records!")
+        return df_full, df, source
+
     except Exception as e:
         st.error(f"❌ Error loading data from Supabase: {str(e)}")
         import traceback
         st.code(traceback.format_exc())
-        return None, "Supabase"
+        return None, None, "Supabase"
 
 def generate_buy_signal(result):
     """Generate buy/wait/hold signal based on forecast"""
