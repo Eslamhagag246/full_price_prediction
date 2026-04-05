@@ -1,4 +1,4 @@
-import streamlit as st
+
 import os
 import pandas as pd
 from supabase import create_client, Client
@@ -40,104 +40,171 @@ def fetch_all(table_name):
 
     return pd.DataFrame(all_data)
 
-@st.cache_data(ttl=3600)
-def load_all_products_cached():
-    df = fetch_all('products')
-    if not df.empty:
-        df = df[df['is_active'] == True]
-    return df
 
-@st.cache_data(ttl=3600)
-def load_all_prices_cached():
-    return fetch_all('price_history')
+# ═══════════════════════════════════════════════════════════
+# LOAD TABLETS
+# ═══════════════════════════════════════════════════════════
 
-@st.cache_data(ttl=3600)
 def load_tablets_from_supabase():
+    try:
+        print("📊 Loading tablets from Supabase...")
 
-    products_df = load_all_products_cached()
-    prices_df = load_all_prices_cached()
+        products_df = fetch_all('products')
+        products_df = products_df[
+            (products_df['category'] == 'tablet') &
+            (products_df['is_active'] == True)
+        ]
 
-    if products_df.empty or prices_df.empty:
+        if products_df.empty:
+            print("⚠️ No tablet products found")
+            return pd.DataFrame()
+
+        print(f"   Found {len(products_df)} tablet products")
+
+        prices_df = fetch_all('price_history')
+
+        if prices_df.empty:
+            print("⚠️ No price history found")
+            return pd.DataFrame()
+
+        print(f"   Found {len(prices_df):,} price records")
+
+        tablet_ids = set(products_df['id'])
+        prices_df = prices_df[prices_df['product_id'].isin(tablet_ids)]
+
+        print(f"   Filtered to {len(prices_df):,} tablet price records")
+
+        df = prices_df.merge(
+            products_df[['id', 'name', 'brand', 'website', 'ram_gb', 'storage_gb', 'url']],
+            left_on='product_id',
+            right_on='id',
+            how='left'
+        )
+        duplicates = prices_df.duplicated(subset=['product_id', 'date'], keep=False).sum()
+        if duplicates > 0:
+            print(f"   ⚠️ WARNING: Found {duplicates} duplicate prices!")
+            print(f"   Removing duplicates (keeping latest)...")
+            prices_df = prices_df.sort_values('timestamp', ascending=False)\
+                .drop_duplicates(subset=['product_id', 'date'], keep='first')
+
+        # Cleaning
+        df['price'] = pd.to_numeric(df['price'], errors='coerce')
+        df['ram_gb'] = pd.to_numeric(df['ram_gb'], errors='coerce').fillna(0).astype(int)
+        df['storage_gb'] = pd.to_numeric(df['storage_gb'], errors='coerce').fillna(0).astype(int)
+        
+        df['date'] = pd.to_datetime(df['date']).dt.date 
+        df['date'] = pd.to_datetime(df['date'])  
+        df['timestamp'] = pd.to_datetime(df['timestamp'])
+
+        df['product_key'] = (
+            df['name'].str.lower().str.strip() + ' ' +
+            df['website'].str.lower() + ' ' +
+            df['ram_gb'].astype(str) + ' ' +
+            df['storage_gb'].astype(str)
+        )
+
+        if 'url' in df.columns:
+            df.rename(columns={'url': 'URL'}, inplace=True)
+
+        df = df.dropna(subset=['timestamp', 'date'])
+        df = df.drop(columns=['id_x', 'id_y', 'product_id'], errors='ignore')
+        df = df.sort_values(['product_key', 'date'])
+
+        daily_counts = df.groupby('product_key')['date'].value_counts()
+        max_per_day = daily_counts.max() if not daily_counts.empty else 0
+        
+        print(f"✅ Loaded {len(df):,} tablet records from Supabase")
+        return df
+
+    except Exception as e:
+        print(f"❌ Error loading tablets: {e}")
         return pd.DataFrame()
 
-    tablet_products = products_df[products_df['category'] == 'tablet']
-    tablet_ids = tablet_products['id'].tolist()
 
-    tablet_prices = prices_df[prices_df['product_id'].isin(tablet_ids)]
+# ═══════════════════════════════════════════════════════════
+# LOAD MOBILES
+# ═══════════════════════════════════════════════════════════
 
-    df = tablet_prices.merge(
-        tablet_products[['id', 'name', 'brand', 'website', 'ram_gb', 'storage_gb', 'url']],
-        left_on='product_id',
-        right_on='id',
-        how='left'
-    )
-
-    df['price'] = pd.to_numeric(df['price'], errors='coerce')
-    df['ram_gb'] = pd.to_numeric(df['ram_gb'], errors='coerce').fillna(0).astype(int)
-    df['storage_gb'] = pd.to_numeric(df['storage_gb'], errors='coerce').fillna(0).astype(int)
-
-    df['date'] = pd.to_datetime(df['date'])
-    df['timestamp'] = pd.to_datetime(df['timestamp'])
-
-    df['product_key'] = (
-        df['name'].str.lower().str.strip() + ' ' +
-        df['website'].str.lower() + ' ' +
-        df['ram_gb'].astype(str) + ' ' +
-        df['storage_gb'].astype(str)
-    )
-
-    if 'url' in df.columns:
-        df.rename(columns={'url': 'URL'}, inplace=True)
-
-    df = df.drop(columns=['id_x', 'id_y', 'product_id'], errors='ignore')
-    df = df.sort_values(['product_key', 'date', 'timestamp'])
-
-    return df
-
-@st.cache_data(ttl=3600)
 def load_mobiles_from_supabase():
+    try:
+        print("📊 Loading mobiles from Supabase...")
 
-    products_df = load_all_products_cached()
-    prices_df = load_all_prices_cached()
+        products_df = fetch_all('products')
+        products_df = products_df[
+            (products_df['category'] == 'mobile') &
+            (products_df['is_active'] == True)
+        ]
 
-    if products_df.empty or prices_df.empty:
+        if products_df.empty:
+            print("⚠️ No mobile products found")
+            return pd.DataFrame()
+
+        print(f"   Found {len(products_df)} mobile products")
+
+        prices_df = fetch_all('price_history')
+
+        if prices_df.empty:
+            print("⚠️ No price history found")
+            return pd.DataFrame()
+
+        print(f"   Found {len(prices_df):,} price records")
+
+        mobile_ids = set(products_df['id'])
+        prices_df = prices_df[prices_df['product_id'].isin(mobile_ids)]
+
+        print(f"   Filtered to {len(prices_df):,} mobile price records")
+
+        df = prices_df.merge(
+            products_df[['id', 'name', 'brand', 'website', 'ram_gb', 'storage_gb', 'url']],
+            left_on='product_id',
+            right_on='id',
+            how='left'
+        )
+        duplicates = prices_df.duplicated(subset=['product_id', 'date'], keep=False).sum()
+        if duplicates > 0:
+            print(f"   ⚠️ WARNING: Found {duplicates} duplicate prices!")
+            print(f"   Removing duplicates (keeping latest)...")
+            prices_df = prices_df.sort_values('timestamp', ascending=False)\
+                .drop_duplicates(subset=['product_id', 'date'], keep='first')
+
+        # Cleaning
+        df['price'] = pd.to_numeric(df['price'], errors='coerce')
+        df['ram_gb'] = pd.to_numeric(df['ram_gb'], errors='coerce').fillna(0).astype(int)
+        df['storage_gb'] = pd.to_numeric(df['storage_gb'], errors='coerce').fillna(0).astype(int)
+        
+        df['date'] = pd.to_datetime(df['date']).dt.date 
+        df['date'] = pd.to_datetime(df['date'])  
+        df['timestamp'] = pd.to_datetime(df['timestamp'])
+
+        df['product_key'] = (
+            df['name'].str.lower().str.strip() + ' ' +
+            df['website'].str.lower() + ' ' +
+            df['ram_gb'].astype(str) + ' ' +
+            df['storage_gb'].astype(str)
+        )
+
+        if 'url' in df.columns:
+            df.rename(columns={'url': 'URL'}, inplace=True)
+
+        df = df.dropna(subset=['timestamp', 'date'])
+        df = df.drop(columns=['id_x', 'id_y', 'product_id'], errors='ignore')
+        df = df.sort_values(['product_key', 'date'])
+
+        daily_counts = df.groupby('product_key')['date'].value_counts()
+        max_per_day = daily_counts.max() if not daily_counts.empty else 0
+
+        print(f"✅ Loaded {len(df):,} mobile records from Supabase")
+        return df
+
+    except Exception as e:
+        print(f"❌ Error loading mobiles: {e}")
         return pd.DataFrame()
 
-    mobile_products = products_df[products_df['category'] == 'mobile']
-    mobile_ids = mobile_products['id'].tolist()
 
-    mobile_prices = prices_df[prices_df['product_id'].isin(mobile_ids)]
+# ═══════════════════════════════════════════════════════════
+# COMPATIBILITY WRAPPER
+# ═══════════════════════════════════════════════════════════
 
-    df = mobile_prices.merge(
-        mobile_products[['id', 'name', 'brand', 'website', 'ram_gb', 'storage_gb', 'url']],
-        left_on='product_id',
-        right_on='id',
-        how='left'
-    )
-
-    df['price'] = pd.to_numeric(df['price'], errors='coerce')
-    df['ram_gb'] = pd.to_numeric(df['ram_gb'], errors='coerce').fillna(0).astype(int)
-    df['storage_gb'] = pd.to_numeric(df['storage_gb'], errors='coerce').fillna(0).astype(int)
-
-    df['date'] = pd.to_datetime(df['date'])
-    df['timestamp'] = pd.to_datetime(df['timestamp'])
-
-    df['product_key'] = (
-        df['name'].str.lower().str.strip() + ' ' +
-        df['website'].str.lower() + ' ' +
-        df['ram_gb'].astype(str) + ' ' +
-        df['storage_gb'].astype(str)
-    )
-
-    if 'url' in df.columns:
-        df.rename(columns={'url': 'URL'}, inplace=True)
-
-    df = df.drop(columns=['id_x', 'id_y', 'product_id'], errors='ignore')
-    df = df.sort_values(['product_key', 'date', 'timestamp'])
-
-    return df
-
-@st.cache_data(ttl=3600)
 def load_and_preprocess_data(filepath='tablets'):
 
     if 'tablet' in filepath.lower():
@@ -145,25 +212,52 @@ def load_and_preprocess_data(filepath='tablets'):
     elif 'mobile' in filepath.lower():
         df = load_mobiles_from_supabase()
     else:
-        raise ValueError("Invalid type")
+        raise ValueError(f"Unknown filepath: {filepath}")
 
     if df.empty:
-        raise ValueError("No data found")
+        raise ValueError(f"No data found in Supabase for {filepath}")
 
-    df_full = df.copy()
+    df_daily = df.groupby(['product_key', 'date']).agg({
+        'price': 'mean',
+        'name': 'first',
+        'brand': 'first',
+        'website': 'first',
+        'ram_gb': 'first',
+        'storage_gb': 'first',
+        'URL': 'last' if 'URL' in df.columns else 'first',
+        'timestamp': 'first'
+    }).reset_index()
 
-    df_daily = df.sort_values(['product_key', 'date', 'timestamp']) \
-                 .drop_duplicates(['product_key', 'date'], keep='last')
+    df_daily = df_daily.sort_values(['product_key', 'date'])
+    
+    total_rows = len(df_daily)
+    unique_products = df_daily['product_key'].nunique()
+    avg_days_per_product = total_rows / unique_products if unique_products > 0 else 0
+    return df_daily
 
-    return df_full, df_daily
+
+# ═══════════════════════════════════════════════════════════
+# TEST
+# ═══════════════════════════════════════════════════════════
 
 if __name__ == "__main__":
-    print("="*50)
+    print("="*60)
+    print("🧪 TESTING SUPABASE DATA LOADER")
+    print("="*60)
 
-    full, daily = load_and_preprocess_data('tablets')
+    print("\n📱 Tablets Test:")
+    tablets_df = load_tablets_from_supabase()
+    print(f"Records: {len(tablets_df)}")
 
-    print("FULL DATA:", len(full))
-    print("DAILY DATA:", len(daily))
-    print("UNIQUE PRODUCTS:", full['product_key'].nunique())
+    print("\n📱 Mobiles Test:")
+    mobiles_df = load_mobiles_from_supabase()
+    print(f"Records: {len(mobiles_df)}")
+    
+    dups = tablets_df.duplicated(subset=['product_key', 'date']).sum()
+    print(f"   Duplicates: {dups} (should be 0!)")
+    
+    print("\n🔄 Wrapper Test:")
+    df = load_and_preprocess_data('tablets')
+    print(f"Final records: {len(df)}")
 
-    print("="*50)
+    print("\n✅ DONE")
