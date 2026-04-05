@@ -15,7 +15,7 @@ if not SUPABASE_URL or not SUPABASE_KEY:
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-'''
+
 def fetch_all(table_name):
     """Fetch all rows from Supabase using pagination"""
     all_data = []
@@ -41,7 +41,6 @@ def fetch_all(table_name):
         offset += limit
 
     return pd.DataFrame(all_data)
-'''
 
 # ═══════════════════════════════════════════════════════════
 # LOAD TABLETS
