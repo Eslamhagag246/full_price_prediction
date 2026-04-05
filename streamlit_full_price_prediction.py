@@ -25,7 +25,8 @@ mobile_model = None
 try:
     from supabase_loader import (
         load_tablets_from_supabase,
-        load_mobiles_from_supabase)
+        load_mobiles_from_supabase,
+        get_product_recommendation)
     SUPABASE_AVAILABLE = True
 except ImportError as e:
     st.error(f"❌ Error importing supabase_loader.py: {str(e)}")
@@ -100,6 +101,30 @@ div[data-testid="stMetricValue"] { font-size: 1.8rem; font-weight: 700; color: #
 section[data-testid="stSidebar"] { background: linear-gradient(180deg, #667eea 0%, #764ba2 100%); }
 section[data-testid="stSidebar"] * { color: white !important; }
 
+.rec-card {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 1.5rem;
+    border-radius: 15px;
+    margin: 1rem 0;
+    box-shadow: 0 10px 30px rgba(102, 126, 234, 0.3);
+}
+
+.trend-up { color: #e74c3c; font-weight: bold; }
+.trend-down { color: #2ecc71; font-weight: bold; }
+.trend-stable { color: #f39c12; font-weight: bold; }
+
+.buy-button {
+    background: #2ecc71;
+    color: white;
+    padding: 0.8rem 2rem;
+    border-radius: 10px;
+    text-decoration: none;
+    display: inline-block;
+    font-weight: 600;
+    margin-top: 1rem;
+}
+
 .device-badge {
     display: inline-block;
     padding: 0.3rem 0.8rem;
@@ -132,7 +157,6 @@ section[data-testid="stSidebar"] * { color: white !important; }
 
 .stat-value { font-size: 1.8rem; font-weight: 700; }
 
-/* Buy/Wait/Hold Signal */
 .signal-banner {
     padding: 1.5rem;
     border-radius: 12px;
@@ -181,11 +205,9 @@ def load_data(device_type):
         return None, "Supabase"
     try:
         if device_type == "Tablets":
-            st.info("📊 Loading tablet data from Supabase...")
             df = load_tablets_from_supabase()
             source = "Supabase (tablets)"
         else:
-            st.info("📊 Loading mobile data from Supabase...")
             df = load_mobiles_from_supabase()
             source = "Supabase (mobiles)"
         
@@ -194,7 +216,6 @@ def load_data(device_type):
             st.info("Make sure your scraper has run and data exists in the database.")
             return None, source
         
-        st.success(f"✅ Loaded {len(df):,} records from Supabase!")
         return df, source
         
     except Exception as e:
@@ -211,33 +232,32 @@ def generate_buy_signal(result):
     mae = result['mae']
     confidence = result['confidence']
     
-    # Volatility check
     volatility_ratio = (mae / last_price) * 100
     
-    if volatility_ratio > 10:  # High volatility
+    if volatility_ratio > 10:
         signal_type = "volatile"
         signal_icon = "⚠️"
         signal_title = "CAUTION - HIGH PRICE VOLATILITY"
         signal_desc = f"Price fluctuations detected (±{volatility_ratio:.1f}%)"
-        signal_detail = "💡 Monitor for a few more days before making a decision"
-    elif change_pct < -2:  # Price dropping - GOOD TO BUY
+        signal_detail = "Consider waiting for more stable pricing"
+    elif change_pct < -3:
         signal_type = "buy"
-        signal_icon = "💰"
-        signal_title = "EXCELLENT BUYING OPPORTUNITY"
-        signal_desc = f"AI model predicts a {abs(change_pct):.1f}% price drop"
-        signal_detail = f"✓ Best time to buy - Expected savings: EGP {abs(future_price - last_price):,.0f}"
-    elif change_pct > 2:  # Price rising - WAIT
+        signal_icon = "🟢"
+        signal_title = "BUY SIGNAL"
+        signal_desc = f"Price expected to drop {abs(change_pct):.1f}% in next 7 days"
+        signal_detail = "Good opportunity to purchase"
+    elif change_pct > 3:
         signal_type = "wait"
-        signal_icon = "⏳"
-        signal_title = "NOT RECOMMENDED - PRICE RISING"
-        signal_desc = f"Price expected to increase by {change_pct:.1f}% in next 7 days"
-        signal_detail = f"⚠️ Wait for price to stabilize - Expected cost increase: EGP {abs(future_price - last_price):,.0f}"
-    else:  # Stable
+        signal_icon = "🔴"
+        signal_title = "WAIT SIGNAL"
+        signal_desc = f"Price expected to rise {change_pct:.1f}% in next 7 days"
+        signal_detail = "Consider delaying purchase"
+    else:
         signal_type = "hold"
-        signal_icon = "📊"
-        signal_title = "STABLE PRICING - BUY ANYTIME"
-        signal_desc = f"Price expected to remain steady (±{abs(change_pct):.1f}%)"
-        signal_detail = f"✓ Safe to purchase now - Low volatility (±{mae:,.0f} EGP)"
+        signal_icon = "🟡"
+        signal_title = "HOLD/NEUTRAL"
+        signal_desc = "Price expected to remain relatively stable"
+        signal_detail = f"Minor change expected: {change_pct:+.1f}%"
     
     return {
         'type': signal_type,
@@ -253,10 +273,9 @@ def generate_buy_signal(result):
 
 
 def create_forecast_chart(result, device_type, date_range=None):
-    """Create forecast chart with optional date range"""
+    """Create forecast chart"""
     pdf = result['pdf']
     
-    # Apply date range filter if specified
     if date_range:
         start_date, end_date = date_range
         pdf = pdf[(pdf['date'] >= start_date) & (pdf['date'] <= end_date)]
@@ -265,7 +284,6 @@ def create_forecast_chart(result, device_type, date_range=None):
     forecast_prices = result['forecast_prices']
     mae = result['mae']
     
-    # Colors
     if device_type == "Tablets":
         color_main = '#667eea'
         color_forecast = '#f093fb'
@@ -275,7 +293,6 @@ def create_forecast_chart(result, device_type, date_range=None):
     
     fig = go.Figure()
     
-    # Historical prices
     fig.add_trace(go.Scatter(
         x=pdf['date'],
         y=pdf['price'],
@@ -286,7 +303,6 @@ def create_forecast_chart(result, device_type, date_range=None):
         hovertemplate='<b>%{x}</b><br>EGP %{y:,.0f}<extra></extra>'
     ))
     
-    # Rolling average
     if 'rolling_avg_7' in pdf.columns:
         fig.add_trace(go.Scatter(
             x=pdf['date'],
@@ -298,7 +314,6 @@ def create_forecast_chart(result, device_type, date_range=None):
             hovertemplate='<b>%{x}</b><br>Avg: EGP %{y:,.0f}<extra></extra>'
         ))
     
-    # Connection to forecast
     last_hist_date = pdf['date'].iloc[-1]
     last_hist_price = pdf['price'].iloc[-1]
     
@@ -311,7 +326,6 @@ def create_forecast_chart(result, device_type, date_range=None):
         hoverinfo='skip'
     ))
     
-    # Forecast
     fig.add_trace(go.Scatter(
         x=forecast_dates,
         y=forecast_prices,
@@ -322,7 +336,6 @@ def create_forecast_chart(result, device_type, date_range=None):
         hovertemplate='<b>%{x}</b><br>Forecast: EGP %{y:,.0f}<extra></extra>'
     ))
     
-    # Confidence band
     upper = [p + mae for p in forecast_prices]
     lower = [max(0, p - mae) for p in forecast_prices]
     
@@ -337,7 +350,6 @@ def create_forecast_chart(result, device_type, date_range=None):
         hoverinfo='skip'
     ))
     
-    # Today marker
     today = pd.Timestamp.today().normalize()
     today_str = today.strftime('%Y-%m-%d')
     
@@ -350,302 +362,78 @@ def create_forecast_chart(result, device_type, date_range=None):
     )
     
     fig.add_annotation(
-        x=today_str, y=1,
+        x=today_str,
+        y=1,
         yref='paper',
         text="Today",
         showarrow=False,
-        font=dict(color="gray", size=11),
         yshift=10
     )
     
-    # Layout
     fig.update_layout(
-        title={
-            'text': '📈 Price History & 7-Day Forecast',
-            'font': {'size': 20, 'color': '#2d3748', 'family': 'Inter'}
-        },
-        xaxis_title='Date',
-        yaxis_title='Price (EGP)',
-        plot_bgcolor='white',
-        paper_bgcolor='white',
-        font=dict(family='Inter', size=12, color='#4a5568'),
+        title=f"📊 Price History & 7-Day Forecast",
+        xaxis_title="Date",
+        yaxis_title="Price (EGP)",
         hovermode='x unified',
-        legend=dict(
-            orientation="h",
-            yanchor="bottom",
-            y=1.02,
-            xanchor="right",
-            x=1,
-            bgcolor='rgba(255,255,255,0.8)',
-            bordercolor='#e2e8f0',
-            borderwidth=1
-        ),
         height=500,
-        margin=dict(l=50, r=50, t=80, b=50)
-    )
-    
-    fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor='#f7fafc')
-    fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='#f7fafc')
-    
-    return fig
-
-
-def create_comparison_chart(results_list, product_names):
-    """Create comparison chart for multiple products"""
-    fig = go.Figure()
-    
-    colors = ['#667eea', '#f093fb', '#f5576c']
-    
-    for idx, (result, name) in enumerate(zip(results_list, product_names)):
-        pdf = result['pdf']
-        forecast_dates = result['forecast_dates']
-        forecast_prices = result['forecast_prices']
-        
-        color = colors[idx % len(colors)]
-        
-        # Historical
-        fig.add_trace(go.Scatter(
-            x=pdf['date'],
-            y=pdf['price'],
-            mode='lines',
-            name=f'{name} (Historical)',
-            line=dict(color=color, width=2),
-            hovertemplate='<b>%{x}</b><br>EGP %{y:,.0f}<extra></extra>'
-        ))
-        
-        # Forecast
-        fig.add_trace(go.Scatter(
-            x=forecast_dates,
-            y=forecast_prices,
-            mode='lines',
-            name=f'{name} (Forecast)',
-            line=dict(color=color, width=2, dash='dash'),
-            hovertemplate='<b>%{x}</b><br>EGP %{y:,.0f}<extra></extra>'
-        ))
-    
-    fig.update_layout(
-        title='Product Comparison',
-        xaxis_title='Date',
-        yaxis_title='Price (EGP)',
-        plot_bgcolor='white',
-        paper_bgcolor='white',
-        height=500,
-        hovermode='x unified'
+        template='plotly_white'
     )
     
     return fig
-
 
 # ═══════════════════════════════════════════════════════════
 # MAIN APP
 # ═══════════════════════════════════════════════════════════
 
-st.title("📱 Price Tracker Pro")
-st.markdown("**Track & Forecast Prices for Tablets & Mobile Phones**")
-st.markdown("---")
+st.markdown("# 📱 Price Tracker Pro")
+st.markdown("### 🤖 AI-Powered Price Forecasting & Best Deal Finder")
 
 # ═══════════════════════════════════════════════════════════
 # SIDEBAR
 # ═══════════════════════════════════════════════════════════
 
-# Initialize session state
-if 'show_market_insights' not in st.session_state:
-    st.session_state.show_market_insights = False
-
 with st.sidebar:
-    st.markdown("## 🎯 Select Device Type")
+    st.markdown("## ⚙️ Settings")
     
     device_type = st.radio(
-        "Choose category:",
-        options=["Tablets", "Mobile Phones"],
-        index=0,
-        label_visibility="collapsed"
+        "📦 Device Type",
+        options=["Tablets", "Mobiles"],
+        help="Choose between tablets or mobile phones"
     )
     
     st.markdown("---")
+    st.markdown("### 🎯 Mode")
     
-    # Check model
+    app_mode = st.radio(
+        "Select Mode",
+        options=["🔮 Price Forecast", "🎯 Best Deal Finder"],
+        help="Price Forecast: See 7-day predictions | Best Deal Finder: Find cheapest website"
+    )
+    
     model_key = 'tablet' if device_type == "Tablets" else 'mobile'
     
-    if MODELS_LOADED[model_key]:
-        st.success(f"✅ {device_type} model loaded")
-    else:
+    if app_mode == "🔮 Price Forecast" and not MODELS_LOADED[model_key]:
         st.error(f"❌ {device_type} model not found")
         st.stop()
-    
-    # Load data
-    df, filepath = load_data(device_type)
-    
-    if df is None:
-        st.stop()
-    
-    # Market Insights Section
+
+# Load data
+df, source = load_data(device_type)
+
+if df is None or df.empty:
+    st.error(f"❌ No {device_type.lower()} data found!")
+    st.stop()
+
+with st.sidebar:
     st.markdown("---")
-    
-    if not st.session_state.show_market_insights:
-        # Large, prominent Market Insights button
-        st.markdown('<div style="margin: 1rem 0;">', unsafe_allow_html=True)
-        
-        insights_clicked = st.button(
-            "📊 Market Insights",
-            use_container_width=True,
-            key="market_insights_btn"
-        )
-        
-        st.markdown('</div>', unsafe_allow_html=True)
-        
-        # Custom styling for this button
-        st.markdown("""
-        <style>
-        /* Market Insights button styling */
-        button[kind="primary"][key="market_insights_btn"] {
-            background: linear-gradient(135deg, #ff6b6b 0%, #ee5a6f 100%) !important;
-            color: white !important;
-            border: none !important;
-            border-radius: 12px !important;
-            padding: 1rem 1.5rem !important;
-            font-weight: 600 !important;
-            font-size: 1.05rem !important;
-            box-shadow: 0 4px 15px rgba(255, 107, 107, 0.3) !important;
-            transition: all 0.3s ease !important;
-        }
-        button[kind="primary"][key="market_insights_btn"]:hover {
-            transform: translateY(-3px) !important;
-            box-shadow: 0 6px 25px rgba(255, 107, 107, 0.5) !important;
-        }
-        </style>
-        """, unsafe_allow_html=True)
-        
-        if insights_clicked:
-            st.session_state.show_market_insights = True
-            st.rerun()
-            
-    else:
-        # Small, subtle back button
-        st.markdown('<div style="margin: 0.5rem 0;">', unsafe_allow_html=True)
-        
-        back_clicked = st.button(
-            "← Back",
-            use_container_width=True,
-            key="back_btn"
-        )
-        
-        st.markdown('</div>', unsafe_allow_html=True)
-        
-        # Custom styling for back button (smaller, subtle)
-        st.markdown("""
-        <style>
-        /* Back button styling */
-        button[key="back_btn"] {
-            background: rgba(255, 255, 255, 0.1) !important;
-            color: white !important;
-            border: 1px solid rgba(255, 255, 255, 0.2) !important;
-            border-radius: 8px !important;
-            padding: 0.5rem 1rem !important;
-            font-weight: 500 !important;
-            font-size: 0.9rem !important;
-            transition: all 0.3s ease !important;
-        }
-        button[key="back_btn"]:hover {
-            background: rgba(255, 255, 255, 0.15) !important;
-            border-color: rgba(255, 255, 255, 0.3) !important;
-        }
-        </style>
-        """, unsafe_allow_html=True)
-        
-        if back_clicked:
-            st.session_state.show_market_insights = False
-            st.rerun()
+    st.markdown("### 📊 Dataset Info")
+    st.metric("Total Products", f"{df['product_key'].nunique():,}")
+    st.metric("Data Points", f"{len(df):,}")
+    last_update = df['date'].max()
+    st.markdown(f"**Last Updated:** {last_update.strftime('%b %d, %Y')}")
+    st.success(f"📡 {source}")
 
 # ═══════════════════════════════════════════════════════════
-# CHECK IF SHOWING MARKET INSIGHTS
-# ═══════════════════════════════════════════════════════════
-
-if st.session_state.show_market_insights:
-    # ═══════════════════════════════════════════════════════════
-    # MARKET INSIGHTS PAGE
-    # ═══════════════════════════════════════════════════════════
-    
-    st.markdown("## 📈 Market Insights")
-    st.markdown("**Which products had the biggest price changes over the tracked period?**")
-    
-    # Calculate price changes
-    price_changes = []
-    
-    for product_key in df['product_key'].unique():
-        pdf = df[df['product_key'] == product_key].copy()
-        
-        if len(pdf) < 2:
-            continue
-        
-        pdf = pdf.sort_values('date')
-        first_price = pdf['price'].iloc[0]
-        last_price = pdf['price'].iloc[-1]
-        
-        if first_price > 0:
-            pct_change = ((last_price - first_price) / first_price) * 100
-            
-            price_changes.append({
-                'Product': pdf['name'].iloc[-1],
-                'Website': pdf['website'].iloc[-1].upper() if 'website' in pdf.columns else 'N/A',
-                'Change %': f"{pct_change:.1f}%",
-                'Current Price': f"EGP {int(last_price):,}",
-                '_change_pct': pct_change
-            })
-    
-    if price_changes:
-        price_changes_df = pd.DataFrame(price_changes)
-        
-        # Two columns: Drops vs Rises
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.markdown("### 🟢 Biggest Price Drops")
-            top_drops = price_changes_df.nsmallest(5, '_change_pct')[['Product', 'Website', 'Change %', 'Current Price']]
-            st.dataframe(top_drops, use_container_width=True, hide_index=True, height=250)
-        
-        with col2:
-            st.markdown("### 🔴 Biggest Price Rises")
-            top_rises = price_changes_df.nlargest(5, '_change_pct')[['Product', 'Website', 'Change %', 'Current Price']]
-            st.dataframe(top_rises, use_container_width=True, hide_index=True, height=250)
-        
-        st.markdown("---")
-        st.markdown("### ✅ Price Change % Since First Observation")
-        
-        # Chart
-        chart_data = price_changes_df.sort_values('_change_pct', ascending=False).head(15)
-        
-        fig = px.bar(
-            chart_data,
-            x='Product',
-            y='_change_pct',
-            color='_change_pct',
-            color_continuous_scale=['#00ff88', '#ffd166', '#ff6b6b'],
-            color_continuous_midpoint=0,
-            labels={'_change_pct': 'Price Change (%)'}
-        )
-        
-        fig.update_layout(
-            xaxis_tickangle=-45,
-            height=500,
-            showlegend=False,
-            plot_bgcolor='white',
-            xaxis_title=None,
-            yaxis_title='Price Change (%)',
-            font=dict(family='Inter', size=12)
-        )
-        
-        fig.update_xaxes(showgrid=False)
-        fig.update_yaxes(showgrid=True, gridcolor='#f0f0f0')
-        
-        st.plotly_chart(fig, use_container_width=True)
-    else:
-        st.info("Not enough data to calculate price changes")
-    
-    st.stop()  # Stop here, don't show forecast page
-
-# ═══════════════════════════════════════════════════════════
-# FILTERS (PRODUCT FORECAST PAGE)
+# FILTERS (Common for both modes)
 # ═══════════════════════════════════════════════════════════
 
 st.markdown("### 🔍 Search & Filter Products")
@@ -661,7 +449,6 @@ if search_term:
 else:
     filtered_df = df.copy()
 
-# Filters
 col1, col2, col3, col4 = st.columns(4)
 
 with col1:
@@ -680,7 +467,6 @@ with col4:
     storages = sorted(filtered_df['storage_gb'].unique())
     selected_storages = st.multiselect("💿 Storage (GB)", storages, default=[])
 
-# Apply filters
 if selected_brands:
     filtered_df = filtered_df[filtered_df['brand'].isin(selected_brands)]
 if selected_websites:
@@ -690,45 +476,32 @@ if selected_rams:
 if selected_storages:
     filtered_df = filtered_df[filtered_df['storage_gb'].isin(selected_storages)]
 
-st.markdown("---")
-
-# ═══════════════════════════════════════════════════════════
-# PRODUCT SELECTION
-# ═══════════════════════════════════════════════════════════
-
 if filtered_df.empty:
     st.warning("⚠️ No products found. Try different filters.")
     st.stop()
 
-product_groups = filtered_df.groupby('product_key').agg({
-    'name': 'first',
-    'brand': 'first',
-    'website': 'first',
-    'ram_gb': 'first',
-    'storage_gb': 'first',
-    'price': 'count'
-}).reset_index()
+st.markdown("---")
 
-product_groups.columns = ['product_key', 'name', 'brand', 'website', 'ram_gb', 'storage_gb', 'n_obs']
-product_groups = product_groups.sort_values('n_obs', ascending=False)
+# ═══════════════════════════════════════════════════════════
+# MODE 1: PRICE FORECAST
+# ═══════════════════════════════════════════════════════════
 
-st.markdown(f"**Found {len(product_groups)} products**")
-
-# Product comparison option
-compare_mode = st.checkbox("📊 Compare multiple products", value=False)
-
-if compare_mode:
-    selected_products = st.multiselect(
-        "Select 2-3 products to compare",
-        options=product_groups['product_key'].tolist(),
-        format_func=lambda x: f"{product_groups[product_groups['product_key']==x]['name'].values[0]}",
-        max_selections=3
-    )
+if app_mode == "🔮 Price Forecast":
     
-    if len(selected_products) < 2:
-        st.info("Please select at least 2 products to compare")
-        st.stop()
-else:
+    product_groups = filtered_df.groupby('product_key').agg({
+        'name': 'first',
+        'brand': 'first',
+        'website': 'first',
+        'ram_gb': 'first',
+        'storage_gb': 'first',
+        'price': 'count'
+    }).reset_index()
+    
+    product_groups.columns = ['product_key', 'name', 'brand', 'website', 'ram_gb', 'storage_gb', 'n_obs']
+    product_groups = product_groups.sort_values('n_obs', ascending=False)
+    
+    st.markdown(f"**Found {len(product_groups)} products**")
+    
     selected_product = st.selectbox(
         f"📱 Select a {device_type[:-1].lower()}",
         options=product_groups['product_key'].tolist(),
@@ -738,65 +511,26 @@ else:
             f"{product_groups[product_groups['product_key']==x]['storage_gb'].values[0]}GB | "
             f"{product_groups[product_groups['product_key']==x]['website'].values[0].upper()} | "
             f"({product_groups[product_groups['product_key']==x]['n_obs'].values[0]} observations)"
-        ),
-        help="Select a product to see price forecast"
+        )
     )
-    selected_products = [selected_product]
-
-st.markdown("---")
-
-# ═══════════════════════════════════════════════════════════
-# FORECAST & DISPLAY
-# ═══════════════════════════════════════════════════════════
-
-# Generate forecasts
-results = []
-product_infos = []
-
-for product_key in selected_products:
-    product_df = df[df['product_key'] == product_key].copy()
-    product_info = product_groups[product_groups['product_key'] == product_key].iloc[0]
-    product_infos.append(product_info)
     
-    with st.spinner(f"🤖 Generating forecast for {product_info['name']}..."):
+    st.markdown("---")
+    
+    product_df = df[df['product_key'] == selected_product].copy()
+    product_info = product_groups[product_groups['product_key'] == selected_product].iloc[0]
+    
+    # Generate forecast
+    with st.spinner("🤖 Generating forecast..."):
         try:
             if device_type == "Tablets":
                 result = forecast_tablet_func(product_df, days_ahead=7, model=tablet_model)
             else:
                 result = forecast_mobile_func(product_df, days_ahead=7, model=mobile_model)
-            results.append(result)
         except Exception as e:
             st.error(f"❌ Error: {str(e)}")
             st.stop()
-
-# Display comparison or single product
-if compare_mode:
-    st.markdown("## 📊 Product Comparison")
     
-    # Comparison table
-    comp_data = []
-    for info, result in zip(product_infos, results):
-        comp_data.append({
-            'Product': info['name'],
-            'Current Price': f"EGP {result['last_price']:,.0f}",
-            '7-Day Forecast': f"EGP {result['forecast_prices'][-1]:,.0f}",
-            'Change': f"{((result['forecast_prices'][-1] - result['last_price']) / result['last_price'] * 100):+.1f}%",
-            'Confidence': result['confidence']
-        })
-    
-    st.dataframe(pd.DataFrame(comp_data), use_container_width=True, hide_index=True)
-    
-    # Comparison chart
-    st.plotly_chart(
-        create_comparison_chart(results, [info['name'] for info in product_infos]),
-        use_container_width=True
-    )
-    
-else:
-    # Single product display
-    result = results[0]
-    product_info = product_infos[0]
-    
+    # Display
     col1, col2 = st.columns([3, 1])
     with col1:
         st.markdown(f"## 📱 {product_info['name']}")
@@ -813,7 +547,7 @@ else:
     
     st.markdown("---")
     
-    # Buy/Wait/Hold Signal
+    # Buy Signal
     signal = generate_buy_signal(result)
     
     st.markdown(f"""
@@ -869,42 +603,8 @@ else:
     
     st.markdown("<br>", unsafe_allow_html=True)
     
-    # Date range selector
-    col1, col2, col3 = st.columns([2, 2, 1])
-    
-    with col1:
-        min_date = result['pdf']['date'].min().date()
-        max_date = result['pdf']['date'].max().date()
-        start_date = st.date_input("Start Date", value=min_date, min_value=min_date, max_value=max_date)
-    
-    with col2:
-        end_date = st.date_input("End Date", value=max_date, min_value=min_date, max_value=max_date)
-    
-    with col3:
-        st.markdown("<br>", unsafe_allow_html=True)
-        if st.button("Reset Range"):
-            start_date = min_date
-            end_date = max_date
-    
     # Chart
-    date_range = (pd.Timestamp(start_date), pd.Timestamp(end_date)) if start_date and end_date else None
-    st.plotly_chart(create_forecast_chart(result, device_type, date_range), use_container_width=True)
-    
-    # Download forecast button
-    forecast_df = pd.DataFrame({
-        'Date': [d.strftime('%Y-%m-%d') for d in result['forecast_dates']],
-        'Forecasted Price (EGP)': result['forecast_prices'],
-        'Lower Bound (EGP)': [max(0, p - result['mae']) for p in result['forecast_prices']],
-        'Upper Bound (EGP)': [p + result['mae'] for p in result['forecast_prices']]
-    })
-    
-    csv = forecast_df.to_csv(index=False)
-    st.download_button(
-        label="📥 Download Forecast (CSV)",
-        data=csv,
-        file_name=f"{product_info['name']}_forecast_{datetime.now().strftime('%Y%m%d')}.csv",
-        mime="text/csv"
-    )
+    st.plotly_chart(create_forecast_chart(result, device_type), use_container_width=True)
     
     # Forecast table
     st.markdown("### 📅 7-Day Forecast Breakdown")
@@ -927,18 +627,135 @@ else:
     stats_col2.metric("📊 Average Price", f"EGP {result['avg_price']:,.0f}")
     stats_col3.metric("📈 Maximum Price", f"EGP {result['max_price']:,.0f}")
     stats_col4.metric("🎯 Model Accuracy (MAE)", f"±{result['mae']:,.0f} EGP")
+
+# ═══════════════════════════════════════════════════════════
+# MODE 2: BEST DEAL FINDER (NEW!)
+# ═══════════════════════════════════════════════════════════
+
+elif app_mode == "🎯 Best Deal Finder":
     
-    # URL
-    if 'URL' in df[df['product_key'] == selected_product].columns:
-        url = df[df['product_key'] == selected_product]['URL'].iloc[-1]
-        if url and str(url) != 'nan':
-            st.markdown(f"[🔗 View on {product_info['website'].upper()}]({url})")
+    st.markdown("## 🎯 Find the Best Deal")
+    st.markdown("Select a product to see the best website to buy from based on current prices and trends")
+    
+    # Get unique products (same name/ram/storage across different websites)
+    unique_products = filtered_df.groupby(['name', 'ram_gb', 'storage_gb']).size().reset_index(name='website_count')
+    unique_products = unique_products[unique_products['website_count'] > 0]
+    
+    if unique_products.empty:
+        st.warning("No products found with your filters")
+        st.stop()
+    
+    st.markdown(f"**Found {len(unique_products)} products**")
+    
+    # Product selection
+    selected_idx = st.selectbox(
+        f"📱 Select a {device_type[:-1].lower()}",
+        options=range(len(unique_products)),
+        format_func=lambda x: (
+            f"{unique_products.iloc[x]['name']} | "
+            f"{unique_products.iloc[x]['ram_gb']}GB RAM + "
+            f"{unique_products.iloc[x]['storage_gb']}GB Storage | "
+            f"({unique_products.iloc[x]['website_count']} websites)"
+        )
+    )
+    
+    selected_product = unique_products.iloc[selected_idx]
+    
+    st.markdown("---")
+    
+    # Get recommendation
+    with st.spinner("🔍 Analyzing prices across websites..."):
+        recommendation = get_product_recommendation(
+            name=selected_product['name'],
+            ram_gb=selected_product['ram_gb'],
+            storage_gb=selected_product['storage_gb'],
+            category=device_type.lower()[:-1],
+            df=df
+        )
+    
+    if not recommendation:
+        st.error("No price data available for this product")
+        st.stop()
+    
+    # Display
+    st.markdown(f"## 📱 {selected_product['name']}")
+    st.markdown(f"**Specs:** {selected_product['ram_gb']}GB RAM + {selected_product['storage_gb']}GB Storage")
+    
+    st.markdown("---")
+    
+    # Best deal card
+    st.markdown("### 🏆 Best Deal")
+    
+    best_price_change = recommendation['price_change_7d']
+    trend_class = "trend-down" if best_price_change < 0 else ("trend-up" if best_price_change > 0 else "trend-stable")
+    
+    st.markdown(f"""
+    <div class="rec-card">
+        <h2>🏆 {recommendation['best_website']}</h2>
+        <h1>EGP {recommendation['best_price']:,.0f}</h1>
+        <p class="{trend_class}">{recommendation['trend']}</p>
+        <p style="font-size: 1.1rem; margin-top: 1rem;">{recommendation['recommendation']}</p>
+        <p style="font-size: 0.9rem; opacity: 0.9;">7-day price change: {best_price_change:+.1f}%</p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    if recommendation['best_url']:
+        st.markdown(f'<a href="{recommendation["best_url"]}" class="buy-button" target="_blank">🛒 Buy Now on {recommendation["best_website"]}</a>', unsafe_allow_html=True)
+    
+    # Alternative websites
+    if recommendation['alternatives']:
+        st.markdown("---")
+        st.markdown("### 🔄 Alternative Websites")
+        
+        for alt in recommendation['alternatives']:
+            price_change = alt['price_change']
+            trend_class = "trend-down" if price_change < 0 else ("trend-up" if price_change > 0 else "trend-stable")
+            
+            col1, col2, col3 = st.columns([2, 2, 3])
+            
+            with col1:
+                st.markdown(f"**{alt['website']}**")
+            with col2:
+                st.markdown(f"**EGP {alt['current_price']:,.0f}**")
+            with col3:
+                st.markdown(f'<span class="{trend_class}">{alt["trend"]} ({price_change:+.1f}%)</span>', unsafe_allow_html=True)
+            
+            if alt.get('url'):
+                st.markdown(f"[🔗 View on {alt['website']}]({alt['url']})")
+            
+            st.markdown("---")
+    
+    # Price comparison chart
+    st.markdown("### 📊 Price Comparison")
+    
+    all_websites = [recommendation['best_website']] + [alt['website'] for alt in recommendation['alternatives']]
+    all_prices = [recommendation['best_price']] + [alt['current_price'] for alt in recommendation['alternatives']]
+    
+    fig = go.Figure(data=[
+        go.Bar(
+            x=all_websites,
+            y=all_prices,
+            marker_color=['#2ecc71'] + ['#3498db'] * len(recommendation['alternatives']),
+            text=[f"EGP {p:,.0f}" for p in all_prices],
+            textposition='outside'
+        )
+    ])
+    
+    fig.update_layout(
+        title="Current Prices Across Websites",
+        xaxis_title="Website",
+        yaxis_title="Price (EGP)",
+        height=400,
+        showlegend=False
+    )
+    
+    st.plotly_chart(fig, use_container_width=True)
 
 # Footer
 st.markdown("---")
 st.markdown("""
 <div style='text-align: center; color: #718096; font-size: 0.9rem; padding: 1rem;'>
-    <p>📱 Price Tracker Pro - Powered by Global Linear Regression</p>
-    <p>Smart price forecasting with AI-driven buy/wait/hold signals</p>
+    <p>📱 Price Tracker Pro - Powered by Supabase & AI</p>
+    <p>✅ Real-time data | 🎯 Smart recommendations | ⚡ Optimized for speed</p>
 </div>
 """, unsafe_allow_html=True)
