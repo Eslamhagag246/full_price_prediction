@@ -1,60 +1,56 @@
-
 import pandas as pd
 import numpy as np
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_absolute_error, r2_score, mean_squared_error
-from datetime import timedelta
 import joblib
-import os
 import warnings
 from supabase import create_client, Client
-from supabase_loader import load_and_preprocess_data
+
 warnings.filterwarnings('ignore')
 
 
-# Supabase Config 
 SUPABASE_URL = "https://ryiqzurrmvaftbnpiopx.supabase.co"
-SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ5aXF6dXJybXZhZnRibnBpb3B4Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MzcwMDY5NywiZXhwIjoyMDg5Mjc2Njk3fQ.7uVZj7t93AWOZd3CsU__AZTXQyNDUxM3IN3VWurzG04' 
-if not SUPABASE_URL or not SUPABASE_KEY:
-    raise ValueError("Missing Supabase credentials!")
+SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ5aXF6dXJybXZhZnRibnBpb3B4Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MzcwMDY5NywiZXhwIjoyMDg5Mjc2Njk3fQ.7uVZj7t93AWOZd3CsU__AZTXQyNDUxM3IN3VWurzG04'
+
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# Featch Data 
-def fetch_all(table_name):
+MODEL_PATH = "mobile_price_model.pkl"
+LOOKBACK = 7
+
+FEATURE_COLS = [
+    'day_index', 'dayofweek', 'day_of_month', 'month',
+    'rolling_avg_3', 'rolling_avg_7', 'rolling_std_3',
+    'price_lag_1', 'price_lag_3', 'price_lag_7',
+    'ram_normalized', 'storage_normalized', 'specs_score',
+]
+
+
+def fetch_all(table_name: str) -> pd.DataFrame:
     all_data = []
     limit = 1000
     offset = 0
-
     while True:
-        response = supabase.table(table_name)\
-            .select("*")\
-            .range(offset, offset + limit - 1)\
+        response = (
+            supabase.table(table_name)
+            .select("*")
+            .range(offset, offset + limit - 1)
             .execute()
-
+        )
         data = response.data
-
         if not data:
             break
-
         all_data.extend(data)
-
         if len(data) < limit:
             break
-
         offset += limit
-
     return pd.DataFrame(all_data)
 
 
-# DATA LOADING
-
-def load_and_preprocess_data(filepath='mobile'):
-
+def load_and_preprocess_data() -> pd.DataFrame:
     print("📊 Loading data from Supabase...")
-
     products_df = fetch_all('products')
-    prices_df = fetch_all('price_history')
+    prices_df   = fetch_all('price_history')
 
     products_df = products_df[
         (products_df['category'] == 'mobile') &
@@ -62,65 +58,52 @@ def load_and_preprocess_data(filepath='mobile'):
     ]
 
     product_ids = set(products_df['id'])
-    prices_df = prices_df[prices_df['product_id'].isin(product_ids)]
+    prices_df   = prices_df[prices_df['product_id'].isin(product_ids)]
 
     df = prices_df.merge(
         products_df[['id', 'name', 'brand', 'website', 'ram_gb', 'storage_gb', 'url']],
-        left_on='product_id',
-        right_on='id',
-        how='left'
+        left_on='product_id', right_on='id', how='left',
     )
 
-    # 🔥 SAME CLEANING LOGIC (kept structure)
-    df['price'] = pd.to_numeric(df['price'], errors='coerce')
-    df = df.dropna(subset=['price'])
-
-    # ✅ FIXED datetime parsing
+    df['price']     = pd.to_numeric(df['price'], errors='coerce')
+    df              = df.dropna(subset=['price'])
     df['timestamp'] = pd.to_datetime(df['timestamp'], format='ISO8601', errors='coerce')
-    df['date'] = df['timestamp'].dt.date
-    df['date'] = pd.to_datetime(df['date'], format='ISO8601', errors='coerce')
-
-    df = df.dropna(subset=['timestamp', 'date'])
+    df['date']      = pd.to_datetime(df['timestamp'].dt.date)
+    df              = df.dropna(subset=['timestamp', 'date'])
 
     df['product_key'] = (
-        df['name'].str.lower().str.strip() + ' ' +
-        df['website'].str.lower() + ' ' +
-        df['ram_gb'].astype(str) + ' ' +
-        df['storage_gb'].astype(str)
+        df['name'].str.lower().str.strip() + ' '
+        + df['website'].str.lower() + ' '
+        + df['ram_gb'].astype(str) + ' '
+        + df['storage_gb'].astype(str)
     )
 
-    df_daily = df.groupby(['product_key', 'date']).agg({
-        'price': 'mean',
-        'name': 'first',
-        'brand': 'first',
-        'website': 'first',
-        'ram_gb': 'first',
-        'storage_gb': 'first',
-        'url': 'last',
-        'timestamp': 'first'
-    }).reset_index()
+    df_daily = (
+        df.groupby(['product_key', 'date'])
+        .agg(
+            price=('price', 'mean'),
+            name=('name', 'first'),
+            brand=('brand', 'first'),
+            website=('website', 'first'),
+            ram_gb=('ram_gb', 'first'),
+            storage_gb=('storage_gb', 'first'),
+            URL=('url', 'last'),
+            timestamp=('timestamp', 'first'),
+        )
+        .reset_index()
+        .sort_values(['product_key', 'date'])
+    )
 
-    df_daily.rename(columns={'url': 'URL'}, inplace=True)
-
-    df_daily = df_daily.sort_values(['product_key', 'date'])
-
-    print(f"✅ Loaded {len(df_daily):,} records from Supabase")
-
+    print(f"✅ Loaded {len(df_daily):,} daily records")
     return df_daily
 
-
-# ═══════════════════════════════════════════════════════════
-# FEATURE ENGINEERING
-# ═══════════════════════════════════════════════════════════
-
-def engineer_features(pdf):
-
+def engineer_features(pdf: pd.DataFrame, day_min: pd.Timestamp) -> pd.DataFrame:
     pdf = pdf.sort_values('date').copy()
 
-    pdf['day_index'] = (pdf['date'] - pdf['date'].min()).dt.days
-    pdf['dayofweek'] = pdf['date'].dt.dayofweek
+    pdf['day_index']    = (pdf['date'] - day_min).dt.days
+    pdf['dayofweek']    = pdf['date'].dt.dayofweek
     pdf['day_of_month'] = pdf['date'].dt.day
-    pdf['month'] = pdf['date'].dt.month
+    pdf['month']        = pdf['date'].dt.month
 
     pdf['rolling_avg_3'] = pdf['price'].rolling(3, min_periods=1).mean()
     pdf['rolling_avg_7'] = pdf['price'].rolling(7, min_periods=1).mean()
@@ -130,238 +113,135 @@ def engineer_features(pdf):
     pdf['price_lag_3'] = pdf['price'].shift(3).fillna(pdf['price'].iloc[0])
     pdf['price_lag_7'] = pdf['price'].shift(7).fillna(pdf['price'].iloc[0])
 
-    pdf['pct_change_1'] = pdf['price'].pct_change().fillna(0)
-    pdf['pct_change_3'] = pdf['price'].pct_change(3).fillna(0)
-
-    pdf['ram_normalized'] = pdf['ram_gb'] / 16.0
+    pdf['ram_normalized']     = pdf['ram_gb']     / 16.0
     pdf['storage_normalized'] = pdf['storage_gb'] / 1024.0
-    pdf['specs_score'] = (pdf['ram_gb'] / 4.0) + (pdf['storage_gb'] / 128.0)
+    pdf['specs_score']        = (pdf['ram_gb'] / 4.0) + (pdf['storage_gb'] / 128.0)
 
     return pdf
 
 
-# ═══════════════════════════════════════════════════════════
-# GLOBAL MODEL TRAINING WITH EVALUATION
-# ═══════════════════════════════════════════════════════════
+def train_global_model(min_obs: int = 10, test_size: float = 0.2):
+    df = load_and_preprocess_data()
 
-FEATURE_COLS = [
-    'day_index', 'dayofweek', 'day_of_month', 'month',
-    'rolling_avg_3', 'rolling_avg_7', 'rolling_std_3',
-    'price_lag_1', 'price_lag_3', 'price_lag_7',
-    'pct_change_1', 'pct_change_3',
-    'ram_normalized', 'storage_normalized', 'specs_score'
-]
+    global_day_min = df['date'].min()
+    print(f"📅 Global day_min (for day_index anchor): {global_day_min.date()}")
 
-MODEL_PATH = "mobile_price_model.pkl"
-
-
-def train_global_model(filepath, min_obs=10, test_size=0.2):
-
-    df = load_and_preprocess_data(filepath)
-
-    X_all = []
-    y_all = []
+    X_train_list, X_test_list = [], []
+    y_train_list, y_test_list = [], []
+    skipped = 0
 
     for product_key in df['product_key'].unique():
+        pdf = (
+            df[df['product_key'] == product_key]
+            .copy()
+            .sort_values('date')
+        )
+        split_idx = int(len(pdf) * (1 - test_size))
+        pdf_train = pdf.iloc[:split_idx].copy()
+        pdf_test  = pdf.iloc[split_idx:].copy()
         
-        pdf = df[df['product_key'] == product_key].copy()
-        upper_limit = pdf['price'].quantile(0.99)
-        lower_limit = pdf['price'].quantile(0.01)
+        upper = pdf_train['price'].quantile(0.99)
+        lower = pdf_train['price'].quantile(0.01)
+        pdf_train = pdf_train[(pdf_train['price'] >= lower) & (pdf_train['price'] <= upper)]
 
-        pdf = pdf[(pdf['price'] <= upper_limit) & (pdf['price'] >= lower_limit)]
+        pdf_test = pdf_test[(pdf_test['price'] >= lower) & (pdf_test['price'] <= upper)]
 
-        if len(pdf) < min_obs:
+        if len(pdf_train) < min_obs or pdf_test.empty:
+            skipped += 1
             continue
 
-        pdf = engineer_features(pdf)
+        pdf_train['target'] = pdf_train['price'].shift(-1)
+        pdf_train = pdf_train.dropna(subset=['target'])
 
-        X_all.append(pdf[FEATURE_COLS])
-        y_all.append(pdf['price'])
+        pdf['target'] = pdf['price'].shift(-1)
+        pdf = pdf.dropna(subset=['target'])
 
-    X_all = pd.concat(X_all)
-    y_all = pd.concat(y_all)
+        if len(pdf) < min_obs:
+            skipped += 1
+            continue
 
-    print(f"\nTraining global mobile model on {len(X_all)} samples")
+        split_idx = int(len(pdf) * (1 - test_size))
+        pdf_train = pdf.iloc[:split_idx].copy()
+        pdf_test  = pdf.iloc[split_idx:].copy()
 
-    # Time-based split
-    split_idx = int(len(X_all) * (1 - test_size))
+        if pdf_train.empty or pdf_test.empty:
+            skipped += 1
+            continue
 
-    X_train = X_all.iloc[:split_idx]
-    X_test = X_all.iloc[split_idx:]
+        pdf_train_fe = engineer_features(pdf_train, global_day_min)
 
-    y_train = y_all.iloc[:split_idx]
-    y_test = y_all.iloc[split_idx:]
+        context          = pdf_train.iloc[-LOOKBACK:].copy()
+        pdf_test_ctx     = pd.concat([context, pdf_test], ignore_index=True)
+        pdf_test_fe_full = engineer_features(pdf_test_ctx, global_day_min)
+        pdf_test_fe      = pdf_test_fe_full.iloc[len(context):].copy()
+
+        X_train_list.append(pdf_train_fe[FEATURE_COLS])
+        y_train_list.append(pdf_train_fe['target'])
+        X_test_list.append(pdf_test_fe[FEATURE_COLS])
+        y_test_list.append(pdf_test_fe['target'])
+
+    if not X_train_list:
+        raise RuntimeError("No products met the minimum observation threshold.")
+
+    print(f"ℹ️  Skipped {skipped} products (too few observations)")
+
+    X_train = pd.concat(X_train_list, ignore_index=True)
+    X_test  = pd.concat(X_test_list,  ignore_index=True)
+    y_train = pd.concat(y_train_list, ignore_index=True)
+    y_test  = pd.concat(y_test_list,  ignore_index=True)
+
+    print(f"\n🏋️  Training on {len(X_train):,} samples | evaluating on {len(X_test):,} samples")
 
     model = LinearRegression()
     model.fit(X_train, y_train)
 
-    # Predictions
     y_train_pred = model.predict(X_train)
-    y_test_pred = model.predict(X_test)
+    y_test_pred  = model.predict(X_test)
 
-    # Metrics
-    train_mae = mean_absolute_error(y_train, y_train_pred)
-    test_mae = mean_absolute_error(y_test, y_test_pred)
-
-    train_r2 = r2_score(y_train, y_train_pred)
-    test_r2 = r2_score(y_test, y_test_pred)
-
-    train_rmse = np.sqrt(mean_squared_error(y_train, y_train_pred))
-    test_rmse = np.sqrt(mean_squared_error(y_test, y_test_pred))
-
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("📊 MODEL PERFORMANCE")
-    print("="*60)
+    print("=" * 60)
 
-    print("\nTRAINING PERFORMANCE")
-    print(f"MAE:  {train_mae:,.2f} EGP")
-    print(f"R²:   {train_r2:.4f}")
-    print(f"RMSE: {train_rmse:,.2f} EGP")
+    print("\n🟢 TRAINING")
+    print(f"   MAE : {mean_absolute_error(y_train, y_train_pred):>12,.2f} EGP")
+    print(f"   RMSE: {np.sqrt(mean_squared_error(y_train, y_train_pred)):>12,.2f} EGP")
+    print(f"   R²  : {r2_score(y_train, y_train_pred):>12.4f}")
 
-    print("\nTEST PERFORMANCE")
-    print(f"MAE:  {test_mae:,.2f} EGP")
-    print(f"R²:   {test_r2:.4f}")
-    print(f"RMSE: {test_rmse:,.2f} EGP")
+    print("\n🔵 TEST")
+    print(f"   MAE : {mean_absolute_error(y_test, y_test_pred):>12,.2f} EGP")
+    print(f"   RMSE: {np.sqrt(mean_squared_error(y_test, y_test_pred)):>12,.2f} EGP")
+    print(f"   R²  : {r2_score(y_test, y_test_pred):>12.4f}")
 
-    return model
+    train_mae = mean_absolute_error(y_train, y_train_pred)
+    test_mae  = mean_absolute_error(y_test,  y_test_pred)
+    gap_ratio = test_mae / train_mae
 
-
-def save_global_model(model):
-
-    joblib.dump(model, MODEL_PATH)
-    print(f"✅ Model saved → {MODEL_PATH}")
-
-
-def load_global_model():
-
-    if not os.path.exists(MODEL_PATH):
-        raise FileNotFoundError(f"{MODEL_PATH} not found")
-
-    return joblib.load(MODEL_PATH)
-
-
-# ═══════════════════════════════════════════════════════════
-# FORECASTING
-# ═══════════════════════════════════════════════════════════
-
-def forecast_product(pdf, days_ahead=7, model=None):
-
-    pdf = engineer_features(pdf)
-
-    X = pdf[FEATURE_COLS]
-    y = pdf['price']
-
-    if model is None:
-        model = load_global_model()
-
-    history_prices = list(pdf['price'].values)
-
-    last_date = pdf['date'].iloc[-1]
-    last_day_index = pdf['day_index'].iloc[-1]
-
-    forecasts = []
-
-    for i in range(days_ahead):
-
-        future_date = last_date + timedelta(days=i+1)
-
-        price_lag_1 = history_prices[-1]
-        price_lag_3 = history_prices[-3] if len(history_prices) >= 3 else history_prices[0]
-        price_lag_7 = history_prices[-7] if len(history_prices) >= 7 else history_prices[0]
-
-        rolling_avg_3 = np.mean(history_prices[-3:])
-        rolling_avg_7 = np.mean(history_prices[-7:])
-        rolling_std_3 = np.std(history_prices[-3:])
-
-        row = [[
-            last_day_index+i+1,
-            future_date.dayofweek,
-            future_date.day,
-            future_date.month,
-            rolling_avg_3,
-            rolling_avg_7,
-            rolling_std_3,
-            price_lag_1,
-            price_lag_3,
-            price_lag_7,
-            0,
-            0,
-            pdf['ram_normalized'].iloc[-1],
-            pdf['storage_normalized'].iloc[-1],
-            pdf['specs_score'].iloc[-1]
-        ]]
-
-        pred = model.predict(row)[0]
-
-        forecasts.append(pred)
-        history_prices.append(pred)
-
-    forecast_dates = [last_date + timedelta(days=i+1) for i in range(days_ahead)]
-
-    y_pred = model.predict(X)
-
-    mae = mean_absolute_error(y, y_pred)
-    r2 = r2_score(y, y_pred)
-
-    n = len(pdf)
-
-    if n >= 30:
-        confidence = "High"
-    elif n >= 15:
-        confidence = "Medium"
+    print(f"\n⚖️  Train/Test MAE ratio: {gap_ratio:.2f}x")
+    if gap_ratio > 3:
+        print("   ⚠️  Large gap — consider feature review or a more powerful model.")
     else:
-        confidence = "Low"
+        print("   ✅ Gap looks healthy.")
 
-    last_price = float(pdf['price'].iloc[-1])
-    future_price = forecasts[-1]
-    trend_pct = ((future_price - last_price) / last_price) * 100
+    artifact = {"model": model, "global_day_min": global_day_min}
+    joblib.dump(artifact, MODEL_PATH)
+    print(f"\n💾 Model + day_min anchor saved → {MODEL_PATH}")
 
-    if trend_pct < -3:
-        signal = "buy"
-        signal_text = "💰 Buy Opportunity"
-        signal_desc = "Price expected to drop"
-    elif trend_pct > 3:
-        signal = "wait"
-        signal_text = "⏳ Wait Before Buying"
-        signal_desc = "Price expected to rise"
-    else:
-        signal = "neutral"
-        signal_text = "📊 Stable Price"
-        signal_desc = "Price expected to stay stable"
-
-    return {
-        'pdf': pdf,
-        'forecast_dates': forecast_dates,
-        'forecast_prices': np.array(forecasts),
-        'mae': mae,
-        'r2': r2,
-        'last_price': last_price,
-        'avg_price': float(pdf['price'].mean()),
-        'min_price': float(pdf['price'].min()),
-        'max_price': float(pdf['price'].max()),
-        'n_obs': n,
-        'confidence': confidence,
-        'signal': signal,
-        'signal_text': signal_text,
-        'signal_desc': signal_desc,
-        'trend_pct': trend_pct,
-        'model_type': 'Global Linear Regression'
-    }
+    return model, global_day_min
 
 
-# ═══════════════════════════════════════════════════════════
-# MAIN TRAINING
-# ═══════════════════════════════════════════════════════════
+def predict_next_price(artifact: dict, product_history: pd.DataFrame) -> float:
+ 
+    model        = artifact["model"]
+    global_day_min = artifact["global_day_min"]
+
+    pdf      = product_history.sort_values('date').copy().tail(LOOKBACK + 1)
+    pdf      = engineer_features(pdf, global_day_min)
+    last_row = pdf.iloc[[-1]][FEATURE_COLS]
+    return float(model.predict(last_row)[0])
+
 
 if __name__ == "__main__":
-
-    print("="*70)
+    print("=" * 60)
     print("🚀 TRAINING GLOBAL MOBILE PRICE MODEL")
-    print("="*70)
-
-    filepath = 'mobile'
-    model = train_global_model(filepath)
-
-    save_global_model(model)
-
-    print("\n✅ Training complete")
+    print("=" * 60)
+    train_global_model(min_obs=10, test_size=0.2)
