@@ -16,6 +16,7 @@ if not SUPABASE_URL or not SUPABASE_KEY:
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 def fetch_all(table_name):
+    """Fetch all rows from Supabase using pagination"""
     all_data = []
     limit = 1000
     offset = 0
@@ -80,21 +81,13 @@ def load_tablets_from_supabase():
             right_on='id',
             how='left'
         )
-        duplicates = prices_df.duplicated(subset=['product_id', 'date'], keep=False).sum()
-        if duplicates > 0:
-            print(f"   ⚠️ WARNING: Found {duplicates} duplicate prices!")
-            print(f"   Removing duplicates (keeping latest)...")
-            prices_df = prices_df.sort_values('timestamp', ascending=False)\
-                .drop_duplicates(subset=['product_id', 'date'], keep='first')
 
         # Cleaning
         df['price'] = pd.to_numeric(df['price'], errors='coerce')
         df['ram_gb'] = pd.to_numeric(df['ram_gb'], errors='coerce').fillna(0).astype(int)
         df['storage_gb'] = pd.to_numeric(df['storage_gb'], errors='coerce').fillna(0).astype(int)
-        
-        df['date'] = pd.to_datetime(df['date']).dt.date 
-        df['date'] = pd.to_datetime(df['date'])  
-        df['timestamp'] = pd.to_datetime(df['timestamp'])
+        df['timestamp'] = pd.to_datetime(df['timestamp'], format='ISO8601', errors='coerce')
+        df['date'] = pd.to_datetime(df['date'], format='ISO8601', errors='coerce')
 
         df['product_key'] = (
             df['name'].str.lower().str.strip() + ' ' +
@@ -110,9 +103,6 @@ def load_tablets_from_supabase():
         df = df.drop(columns=['id_x', 'id_y', 'product_id'], errors='ignore')
         df = df.sort_values(['product_key', 'date'])
 
-        daily_counts = df.groupby('product_key')['date'].value_counts()
-        max_per_day = daily_counts.max() if not daily_counts.empty else 0
-        
         print(f"✅ Loaded {len(df):,} tablet records from Supabase")
         return df
 
@@ -160,21 +150,13 @@ def load_mobiles_from_supabase():
             right_on='id',
             how='left'
         )
-        duplicates = prices_df.duplicated(subset=['product_id', 'date'], keep=False).sum()
-        if duplicates > 0:
-            print(f"   ⚠️ WARNING: Found {duplicates} duplicate prices!")
-            print(f"   Removing duplicates (keeping latest)...")
-            prices_df = prices_df.sort_values('timestamp', ascending=False)\
-                .drop_duplicates(subset=['product_id', 'date'], keep='first')
 
         # Cleaning
         df['price'] = pd.to_numeric(df['price'], errors='coerce')
         df['ram_gb'] = pd.to_numeric(df['ram_gb'], errors='coerce').fillna(0).astype(int)
         df['storage_gb'] = pd.to_numeric(df['storage_gb'], errors='coerce').fillna(0).astype(int)
-        
-        df['date'] = pd.to_datetime(df['date']).dt.date 
-        df['date'] = pd.to_datetime(df['date'])  
-        df['timestamp'] = pd.to_datetime(df['timestamp'])
+        df['timestamp'] = pd.to_datetime(df['timestamp'], format='ISO8601', errors='coerce')
+        df['date'] = pd.to_datetime(df['date'], format='ISO8601', errors='coerce')
 
         df['product_key'] = (
             df['name'].str.lower().str.strip() + ' ' +
@@ -185,13 +167,10 @@ def load_mobiles_from_supabase():
 
         if 'url' in df.columns:
             df.rename(columns={'url': 'URL'}, inplace=True)
-
+            
         df = df.dropna(subset=['timestamp', 'date'])
         df = df.drop(columns=['id_x', 'id_y', 'product_id'], errors='ignore')
         df = df.sort_values(['product_key', 'date'])
-
-        daily_counts = df.groupby('product_key')['date'].value_counts()
-        max_per_day = daily_counts.max() if not daily_counts.empty else 0
 
         print(f"✅ Loaded {len(df):,} mobile records from Supabase")
         return df
@@ -229,10 +208,7 @@ def load_and_preprocess_data(filepath='tablets'):
     }).reset_index()
 
     df_daily = df_daily.sort_values(['product_key', 'date'])
-    
-    total_rows = len(df_daily)
-    unique_products = df_daily['product_key'].nunique()
-    avg_days_per_product = total_rows / unique_products if unique_products > 0 else 0
+
     return df_daily
 
 
@@ -252,10 +228,7 @@ if __name__ == "__main__":
     print("\n📱 Mobiles Test:")
     mobiles_df = load_mobiles_from_supabase()
     print(f"Records: {len(mobiles_df)}")
-    
-    dups = tablets_df.duplicated(subset=['product_key', 'date']).sum()
-    print(f"   Duplicates: {dups} (should be 0!)")
-    
+
     print("\n🔄 Wrapper Test:")
     df = load_and_preprocess_data('tablets')
     print(f"Final records: {len(df)}")
