@@ -14,6 +14,7 @@ warnings.filterwarnings('ignore')
 
 SUPABASE_URL = "https://ryiqzurrmvaftbnpiopx.supabase.co"
 SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ5aXF6dXJybXZhZnRibnBpb3B4Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MzcwMDY5NywiZXhwIjoyMDg5Mjc2Njk3fQ.7uVZj7t93AWOZd3CsU__AZTXQyNDUxM3IN3VWurzG04'
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 MODEL_PATH = "mobile_price_model.pkl"
 LOOKBACK = 7
@@ -24,84 +25,6 @@ FEATURE_COLS = [
     'price_lag_1', 'price_lag_3', 'price_lag_7',
     'ram_normalized', 'storage_normalized', 'specs_score',
 ]
-
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-
-
-# =========================
-# FETCH DATA
-# =========================
-def fetch_all(table_name: str) -> pd.DataFrame:
-    all_data = []
-    limit = 1000
-    offset = 0
-
-    while True:
-        response = (
-            supabase.table(table_name)
-            .select("*")
-            .range(offset, offset + limit - 1)
-            .execute()
-        )
-
-        data = response.data
-        if not data:
-            break
-
-        all_data.extend(data)
-
-        if len(data) < limit:
-            break
-
-        offset += limit
-
-    return pd.DataFrame(all_data)
-
-
-# =========================
-# PREPROCESS
-# =========================
-def load_and_preprocess_data() -> pd.DataFrame:
-    products_df = fetch_all('products')
-    prices_df   = fetch_all('price_history')
-
-    products_df = products_df[
-        (products_df['category'] == 'mobile') &
-        (products_df['is_active'] == True)
-    ]
-
-    prices_df = prices_df[prices_df['product_id'].isin(products_df['id'])]
-
-    df = prices_df.merge(
-        products_df[['id', 'name', 'brand', 'website', 'ram_gb', 'storage_gb']],
-        left_on='product_id', right_on='id', how='left',
-    )
-
-    df['price'] = pd.to_numeric(df['price'], errors='coerce')
-    df = df.dropna(subset=['price'])
-
-    df['timestamp'] = pd.to_datetime(df['timestamp'])
-    df['date'] = pd.to_datetime(df['timestamp'].dt.date)
-
-    df['product_key'] = (
-        df['name'].str.lower().str.strip() + ' ' +
-        df['website'].str.lower() + ' ' +
-        df['ram_gb'].astype(str) + ' ' +
-        df['storage_gb'].astype(str)
-    )
-
-    df_daily = (
-        df.groupby(['product_key', 'date'])
-        .agg(
-            price=('price', 'mean'),
-            ram_gb=('ram_gb', 'first'),
-            storage_gb=('storage_gb', 'first'),
-        )
-        .reset_index()
-        .sort_values(['product_key', 'date'])
-    )
-
-    return df_daily
 
 
 # =========================
@@ -131,51 +54,11 @@ def engineer_features(pdf: pd.DataFrame, day_min: pd.Timestamp) -> pd.DataFrame:
 
 
 # =========================
-# TRAIN
-# =========================
-def train_model():
-    df = load_and_preprocess_data()
-    global_day_min = df['date'].min()
-
-    X_list, y_list = [], []
-
-    for key in df['product_key'].unique():
-        pdf = df[df['product_key'] == key].copy()
-
-        if len(pdf) < 10:
-            continue
-
-        pdf['target'] = pdf['price'].shift(-1)
-        pdf = pdf.dropna()
-
-        pdf = engineer_features(pdf, global_day_min)
-
-        X_list.append(pdf[FEATURE_COLS])
-        y_list.append(pdf['target'])
-
-    X = pd.concat(X_list)
-    y = pd.concat(y_list)
-
-    model = LinearRegression()
-    model.fit(X, y)
-
-    # ✅ SAVE AS DICT (IMPORTANT)
-    artifact = {
-        "model": model,
-        "global_day_min": global_day_min
-    }
-
-    joblib.dump(artifact, MODEL_PATH)
-    print("✅ Model saved!")
-
-
-# =========================
 # LOAD MODEL (FIXED)
 # =========================
 def load_model():
     artifact = joblib.load(MODEL_PATH)
 
-    # ✅ IMPORTANT FIX HERE
     model = artifact["model"]
     global_day_min = artifact["global_day_min"]
 
@@ -183,9 +66,9 @@ def load_model():
 
 
 # =========================
-# PREDICT (SAFE VERSION)
+# SINGLE PREDICTION
 # =========================
-def predict_next_price(product_history: pd.DataFrame):
+def predict_next_price(product_history: pd.DataFrame) -> float:
     model, global_day_min = load_model()
 
     pdf = product_history.sort_values('date').tail(LOOKBACK + 1)
@@ -199,17 +82,39 @@ def predict_next_price(product_history: pd.DataFrame):
 
 
 # =========================
-# RUN
+# MULTI-STEP FORECAST (FIXED)
 # =========================
-if __name__ == "__main__":
-    print("🚀 Training model...")
-    train_model()
+def forecast_product(product_history: pd.DataFrame, days: int = 7):
+    model, global_day_min = load_model()
 
-    print("🔮 Running test prediction...")
+    pdf = product_history.copy().sort_values('date')
+    predictions = []
 
-    df = load_and_preprocess_data()
-    sample_product = df[df['product_key'] == df['product_key'].iloc[0]]
+    for _ in range(days):
+        pdf_fe = engineer_features(pdf.tail(LOOKBACK + 1), global_day_min)
+        X = pdf_fe.iloc[[-1]][FEATURE_COLS]
 
-    pred = predict_next_price(sample_product)
+        next_price = model.predict(X)[0]
+        next_date = pdf['date'].max() + pd.Timedelta(days=1)
 
-    print(f"✅ Predicted next price: {pred:.2f} EGP")
+        new_row = pdf.iloc[-1:].copy()
+        new_row['date'] = next_date
+        new_row['price'] = next_price
+
+        pdf = pd.concat([pdf, new_row], ignore_index=True)
+
+        predictions.append({
+            "date": next_date,
+            "predicted_price": float(next_price)
+        })
+
+    return pd.DataFrame(predictions)
+
+
+# =========================
+# EXPORTS (IMPORTANT)
+# =========================
+__all__ = [
+    "predict_next_price",
+    "forecast_product",
+]
