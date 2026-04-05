@@ -15,7 +15,6 @@ if not SUPABASE_URL or not SUPABASE_KEY:
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-'''
 def fetch_all(table_name):
     """Fetch all rows from Supabase using pagination"""
     all_data = []
@@ -41,7 +40,7 @@ def fetch_all(table_name):
         offset += limit
 
     return pd.DataFrame(all_data)
-'''
+
 # ═══════════════════════════════════════════════════════════
 # LOAD TABLETS
 # ═══════════════════════════════════════════════════════════
@@ -62,10 +61,10 @@ def load_all_prices_cached():
         result = supabase.table('price_history').select('*').order('date').execute()
         if result.data:
             return pd.DataFrame(result.data)
-        return pd.DataFrame()
+        return fetch_all('price_history')
     except Exception as e:
         print(f"❌ Error loading prices: {e}")
-        return pd.DataFrame()
+        return fetch_all('price_history')
  
 
 @st.cache_data(ttl=3600)
