@@ -24,7 +24,7 @@ mobile_model = None
 try:
     from supabase_loader import (
         load_tablets_from_supabase,
-        load_mobiles_from_supabase,
+        load_mobiles_from_supabase,)
         #get_product_recommendation)
     SUPABASE_AVAILABLE = True
 except ImportError as e:
