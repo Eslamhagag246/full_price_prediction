@@ -2,9 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
-import plotly.express as px
 from datetime import timedelta, datetime
-import os
 
 # ═══════════════════════════════════════════════════════════
 # PAGE CONFIG
@@ -22,6 +20,7 @@ st.set_page_config(
 MODELS_LOADED = {'tablet': False, 'mobile': False}
 tablet_model = None
 mobile_model = None
+
 try:
     from supabase_loader import (
         load_tablets_from_supabase,
@@ -30,59 +29,44 @@ try:
     SUPABASE_AVAILABLE = True
 except ImportError as e:
     st.error(f"❌ Error importing supabase_loader.py: {str(e)}")
-    st.error("Make sure supabase_loader.py is in the same directory!")
     SUPABASE_AVAILABLE = False
+
 try:
     from tablet_model_newVersion import (
-        load_and_preprocess_data as load_tablet_data_func,
         forecast_product as forecast_tablet_func,
         load_global_model as load_tablet_model
     )
-    try:
-        tablet_model = load_tablet_model()
-        MODELS_LOADED['tablet'] = True
-    except:
-        st.sidebar.warning("⚠️ Tablet model not trained yet")
-except ImportError as e:
-    st.error(f"❌ Error importing tablet_model_newVersion.py: {str(e)}")
+    tablet_model = load_tablet_model()
+    MODELS_LOADED['tablet'] = True
+except:
+    st.sidebar.warning("⚠️ Tablet model not loaded")
 
 try:
     from mobile_model_newVersion import (
-        load_and_preprocess_data as load_mobile_data_func,
         forecast_product as forecast_mobile_func,
         load_global_model as load_mobile_model
     )
-    try:
-        mobile_model = load_mobile_model()
-        MODELS_LOADED['mobile'] = True
-    except:
-        st.sidebar.warning("⚠️ Mobile model not trained yet")
-except ImportError as e:
-    st.error(f"❌ Error importing mobile_model_newVersion.py: {str(e)}")
+    mobile_model = load_mobile_model()
+    MODELS_LOADED['mobile'] = True
+except:
+    st.sidebar.warning("⚠️ Mobile model not loaded")
 
 # ═══════════════════════════════════════════════════════════
-# CUSTOM CSS
+# CSS
 # ═══════════════════════════════════════════════════════════
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-
 * { font-family: 'Inter', sans-serif; }
 .stApp { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
-
 .main .block-container {
     background: white;
     border-radius: 20px;
     padding: 2rem;
     box-shadow: 0 20px 60px rgba(0,0,0,0.3);
 }
-
-h1 { color: #667eea; font-weight: 700; margin-bottom: 0.5rem; }
+h1 { color: #667eea; font-weight: 700; }
 h2, h3 { color: #4a5568; font-weight: 600; }
-
-.stSelectbox label, .stMultiSelect label { font-weight: 600; color: #2d3748; }
-div[data-testid="stMetricValue"] { font-size: 1.8rem; font-weight: 700; color: #667eea; }
-
 .stButton > button {
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     color: white;
@@ -90,250 +74,86 @@ div[data-testid="stMetricValue"] { font-size: 1.8rem; font-weight: 700; color: #
     border-radius: 10px;
     padding: 0.5rem 2rem;
     font-weight: 600;
-    transition: all 0.3s;
 }
-
-.stButton > button:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 10px 20px rgba(102, 126, 234, 0.4);
-}
-
 section[data-testid="stSidebar"] { background: linear-gradient(180deg, #667eea 0%, #764ba2 100%); }
 section[data-testid="stSidebar"] * { color: white !important; }
-
 .rec-card {
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     color: white;
     padding: 1.5rem;
     border-radius: 15px;
     margin: 1rem 0;
-    box-shadow: 0 10px 30px rgba(102, 126, 234, 0.3);
 }
-
-.trend-up { color: #e74c3c; font-weight: bold; }
-.trend-down { color: #2ecc71; font-weight: bold; }
-.trend-stable { color: #f39c12; font-weight: bold; }
-
-.buy-button {
-    background: #2ecc71;
-    color: white;
-    padding: 0.8rem 2rem;
-    border-radius: 10px;
-    text-decoration: none;
-    display: inline-block;
-    font-weight: 600;
-    margin-top: 1rem;
-}
-
-.device-badge {
-    display: inline-block;
-    padding: 0.3rem 0.8rem;
-    border-radius: 20px;
-    font-size: 0.9rem;
-    font-weight: 600;
-    margin: 0.2rem;
-}
-
-.badge-tablet { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; }
-.badge-mobile { background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); color: white; }
-
 .stat-card {
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     color: white;
     padding: 1.5rem;
     border-radius: 15px;
     text-align: center;
-    margin: 0.5rem 0;
-    box-shadow: 0 10px 30px rgba(102, 126, 234, 0.3);
 }
-
-.stat-label {
-    font-size: 0.85rem;
-    opacity: 0.9;
-    text-transform: uppercase;
-    letter-spacing: 1px;
-    margin-bottom: 0.5rem;
-}
-
+.stat-label { font-size: 0.85rem; opacity: 0.9; }
 .stat-value { font-size: 1.8rem; font-weight: 700; }
-
-.signal-banner {
-    padding: 1.5rem;
-    border-radius: 12px;
-    margin: 1.5rem 0;
-    border-left: 5px solid;
-}
-
-.signal-buy {
-    background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%);
-    border-left-color: #28a745;
-    color: #155724;
-}
-
-.signal-wait {
-    background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%);
-    border-left-color: #ffc107;
-    color: #856404;
-}
-
-.signal-hold {
-    background: linear-gradient(135deg, #d1ecf1 0%, #bee5eb 100%);
-    border-left-color: #17a2b8;
-    color: #0c5460;
-}
-
-.signal-volatile {
-    background: linear-gradient(135deg, #f8d7da 0%, #f5c6cb 100%);
-    border-left-color: #dc3545;
-    color: #721c24;
-}
-
-.signal-title { font-size: 1.3rem; font-weight: 700; margin-bottom: 0.5rem; }
-.signal-desc { font-size: 1rem; margin-bottom: 0.3rem; }
-.signal-detail { font-size: 0.9rem; opacity: 0.8; }
+.trend-up { color: #e74c3c; font-weight: bold; }
+.trend-down { color: #2ecc71; font-weight: bold; }
+.trend-stable { color: #f39c12; font-weight: bold; }
 </style>
 """, unsafe_allow_html=True)
 
 # ═══════════════════════════════════════════════════════════
-# HELPER FUNCTIONS
+# FUNCTIONS
 # ═══════════════════════════════════════════════════════════
 
 @st.cache_data(ttl=3600)
 def load_data(device_type):
     if not SUPABASE_AVAILABLE:
-        st.error("❌ Supabase loader not available!")
-        return None, "Supabase"
+        return None, None
     try:
         if device_type == "Tablets":
             df = load_tablets_from_supabase()
-            source = "Supabase (tablets)"
         else:
             df = load_mobiles_from_supabase()
-            source = "Supabase (mobiles)"
         
         if df.empty:
-            st.error(f"❌ No {device_type.lower()} data found in Supabase!")
-            st.info("Make sure your scraper has run and data exists in the database.")
-            return None, source
+            st.error(f"❌ No data found!")
+            return None, None
         
-        return df, source
-        
+        return df, "Supabase"
     except Exception as e:
-        st.error(f"❌ Error loading data from Supabase: {str(e)}")
-        import traceback
-        st.code(traceback.format_exc())
-        return None, "Supabase"
+        st.error(f"❌ Error: {e}")
+        return None, None
 
 def generate_buy_signal(result):
-    """Generate buy/wait/hold signal based on forecast"""
     last_price = result['last_price']
     future_price = result['forecast_prices'][-1]
     change_pct = ((future_price - last_price) / last_price) * 100
-    mae = result['mae']
-    confidence = result['confidence']
     
-    volatility_ratio = (mae / last_price) * 100
-    
-    if volatility_ratio > 10:
-        signal_type = "volatile"
-        signal_icon = "⚠️"
-        signal_title = "CAUTION - HIGH PRICE VOLATILITY"
-        signal_desc = f"Price fluctuations detected (±{volatility_ratio:.1f}%)"
-        signal_detail = "Consider waiting for more stable pricing"
-    elif change_pct < -3:
-        signal_type = "buy"
-        signal_icon = "🟢"
-        signal_title = "BUY SIGNAL"
-        signal_desc = f"Price expected to drop {abs(change_pct):.1f}% in next 7 days"
-        signal_detail = "Good opportunity to purchase"
+    if change_pct < -3:
+        return {'type': 'buy', 'icon': '🟢', 'title': 'BUY SIGNAL', 'desc': f"Price dropping {abs(change_pct):.1f}%"}
     elif change_pct > 3:
-        signal_type = "wait"
-        signal_icon = "🔴"
-        signal_title = "WAIT SIGNAL"
-        signal_desc = f"Price expected to rise {change_pct:.1f}% in next 7 days"
-        signal_detail = "Consider delaying purchase"
+        return {'type': 'wait', 'icon': '🔴', 'title': 'WAIT SIGNAL', 'desc': f"Price rising {change_pct:.1f}%"}
     else:
-        signal_type = "hold"
-        signal_icon = "🟡"
-        signal_title = "HOLD/NEUTRAL"
-        signal_desc = "Price expected to remain relatively stable"
-        signal_detail = f"Minor change expected: {change_pct:+.1f}%"
-    
-    return {
-        'type': signal_type,
-        'icon': signal_icon,
-        'title': signal_title,
-        'desc': signal_desc,
-        'detail': signal_detail,
-        'confidence': confidence,
-        'current': last_price,
-        'forecast': future_price,
-        'change_pct': change_pct
-    }
+        return {'type': 'hold', 'icon': '🟡', 'title': 'HOLD', 'desc': 'Price stable'}
 
-
-def create_forecast_chart(result, device_type, date_range=None):
-    """Create forecast chart"""
+def create_forecast_chart(result, device_type):
     pdf = result['pdf']
-    
-    if date_range:
-        start_date, end_date = date_range
-        pdf = pdf[(pdf['date'] >= start_date) & (pdf['date'] <= end_date)]
-    
     forecast_dates = result['forecast_dates']
     forecast_prices = result['forecast_prices']
     mae = result['mae']
     
-    if device_type == "Tablets":
-        color_main = '#667eea'
-        color_forecast = '#f093fb'
-    else:
-        color_main = '#f5576c'
-        color_forecast = '#feca57'
+    color = '#667eea' if device_type == "Tablets" else '#f5576c'
     
     fig = go.Figure()
     
     fig.add_trace(go.Scatter(
-        x=pdf['date'],
-        y=pdf['price'],
-        mode='lines+markers',
-        name='Historical Price',
-        line=dict(color=color_main, width=3),
-        marker=dict(size=6, color=color_main),
-        hovertemplate='<b>%{x}</b><br>EGP %{y:,.0f}<extra></extra>'
-    ))
-    
-    if 'rolling_avg_7' in pdf.columns:
-        fig.add_trace(go.Scatter(
-            x=pdf['date'],
-            y=pdf['rolling_avg_7'],
-            mode='lines',
-            name='7-Day Average',
-            line=dict(color=color_main, width=2, dash='dot'),
-            opacity=0.6,
-            hovertemplate='<b>%{x}</b><br>Avg: EGP %{y:,.0f}<extra></extra>'
-        ))
-    
-    last_hist_date = pdf['date'].iloc[-1]
-    last_hist_price = pdf['price'].iloc[-1]
-    
-    fig.add_trace(go.Scatter(
-        x=[last_hist_date, forecast_dates[0]],
-        y=[last_hist_price, forecast_prices[0]],
-        mode='lines',
-        line=dict(color='gray', width=2, dash='dot'),
-        showlegend=False,
-        hoverinfo='skip'
+        x=pdf['date'], y=pdf['price'],
+        mode='lines+markers', name='Historical',
+        line=dict(color=color, width=3)
     ))
     
     fig.add_trace(go.Scatter(
-        x=forecast_dates,
-        y=forecast_prices,
-        mode='lines+markers',
-        name='7-Day Forecast',
-        line=dict(color=color_forecast, width=3, dash='dash'),
-        marker=dict(size=8, symbol='diamond', color=color_forecast),
-        hovertemplate='<b>%{x}</b><br>Forecast: EGP %{y:,.0f}<extra></extra>'
+        x=forecast_dates, y=forecast_prices,
+        mode='lines+markers', name='Forecast',
+        line=dict(color='#f093fb', width=3, dash='dash')
     ))
     
     upper = [p + mae for p in forecast_prices]
@@ -342,51 +162,29 @@ def create_forecast_chart(result, device_type, date_range=None):
     fig.add_trace(go.Scatter(
         x=forecast_dates + forecast_dates[::-1],
         y=upper + lower[::-1],
-        fill='toself',
-        fillcolor=f'rgba(240, 147, 251, 0.2)',
+        fill='toself', fillcolor='rgba(240,147,251,0.2)',
         line=dict(color='rgba(255,255,255,0)'),
-        name='Confidence Interval',
-        showlegend=True,
-        hoverinfo='skip'
+        name='Confidence'
     ))
     
-    today = pd.Timestamp.today().normalize()
-    today_str = today.strftime('%Y-%m-%d')
-    
-    fig.add_shape(
-        type="line",
-        x0=today_str, x1=today_str,
-        y0=0, y1=1,
-        yref='paper',
-        line=dict(color="gray", width=2, dash="dot")
-    )
-    
-    fig.add_annotation(
-        x=today_str,
-        y=1,
-        yref='paper',
-        text="Today",
-        showarrow=False,
-        yshift=10
-    )
-    
     fig.update_layout(
-        title=f"📊 Price History & 7-Day Forecast",
-        xaxis_title="Date",
-        yaxis_title="Price (EGP)",
-        hovermode='x unified',
-        height=500,
-        template='plotly_white'
+        title="Price History & Forecast",
+        xaxis_title="Date", yaxis_title="Price (EGP)",
+        height=500
     )
     
     return fig
 
 # ═══════════════════════════════════════════════════════════
-# MAIN APP
+# MAIN
 # ═══════════════════════════════════════════════════════════
 
-st.markdown("# 📱 Price Tracker Pro")
+st.title("📱 Price Tracker Pro")
 st.markdown("### 🤖 AI-Powered Price Forecasting & Best Deal Finder")
+
+# Session state
+if 'show_market_insights' not in st.session_state:
+    st.session_state.show_market_insights = False
 
 # ═══════════════════════════════════════════════════════════
 # SIDEBAR
@@ -413,10 +211,10 @@ with st.sidebar:
     if app_mode == "🔮 Price Forecast" and not MODELS_LOADED[model_key]:
         st.error(f"❌ Model not found")
         st.stop()
- 
+
 # Load data
 df, source = load_data(device_type)
- 
+
 if df is None or df.empty:
     st.error("❌ No data!")
     st.info("⚠️ **ISSUE DETECTED:** Your database only has 1 observation per product!")
@@ -426,7 +224,7 @@ if df is None or df.empty:
 python populate_supabase_quick.py
     """)
     st.stop()
- 
+
 with st.sidebar:
     st.markdown("---")
     st.markdown("### 📊 Dataset Info")
@@ -439,11 +237,11 @@ with st.sidebar:
     if st.button("📊 Market Insights", use_container_width=True):
         st.session_state.show_market_insights = not st.session_state.show_market_insights
         st.rerun()
- 
+
 # ═══════════════════════════════════════════════════════════
 # MARKET INSIGHTS
 # ═══════════════════════════════════════════════════════════
- 
+
 if st.session_state.show_market_insights:
     st.markdown("## 📈 Market Insights")
     
@@ -486,16 +284,16 @@ if st.session_state.show_market_insights:
         st.rerun()
     
     st.stop()
- 
+
 # ═══════════════════════════════════════════════════════════
 # FILTERS
 # ═══════════════════════════════════════════════════════════
- 
+
 st.markdown("### 🔍 Search & Filter")
- 
+
 search = st.text_input("🔎 Search", placeholder="e.g., iPad, Galaxy...")
 filtered_df = df[df['name'].str.contains(search, case=False, na=False)] if search else df.copy()
- 
+
 col1, col2, col3, col4 = st.columns(4)
 with col1:
     brands = st.multiselect("🏷️ Brand", sorted(filtered_df['brand'].unique()))
@@ -505,7 +303,7 @@ with col3:
     rams = st.multiselect("💾 RAM (GB)", sorted(filtered_df['ram_gb'].unique()))
 with col4:
     storages = st.multiselect("💿 Storage (GB)", sorted(filtered_df['storage_gb'].unique()))
- 
+
 if brands:
     filtered_df = filtered_df[filtered_df['brand'].isin(brands)]
 if websites:
@@ -514,17 +312,17 @@ if rams:
     filtered_df = filtered_df[filtered_df['ram_gb'].isin(rams)]
 if storages:
     filtered_df = filtered_df[filtered_df['storage_gb'].isin(storages)]
- 
+
 if filtered_df.empty:
     st.warning("No products found")
     st.stop()
- 
+
 st.markdown("---")
- 
+
 # ═══════════════════════════════════════════════════════════
 # MODE 1: PRICE FORECAST
 # ═══════════════════════════════════════════════════════════
- 
+
 if app_mode == "🔮 Price Forecast":
     
     products = filtered_df.groupby('product_key').agg({
@@ -641,11 +439,11 @@ if app_mode == "🔮 Price Forecast":
     sc2.metric("📊 Avg", f"EGP {result['avg_price']:,.0f}")
     sc3.metric("📈 Max", f"EGP {result['max_price']:,.0f}")
     sc4.metric("🎯 MAE", f"±{result['mae']:,.0f}")
- 
+
 # ═══════════════════════════════════════════════════════════
 # MODE 2: BEST DEAL FINDER
 # ═══════════════════════════════════════════════════════════
- 
+
 elif app_mode == "🎯 Best Deal Finder":
     
     st.markdown("## 🎯 Find Best Deal")
@@ -732,8 +530,7 @@ elif app_mode == "🎯 Best Deal Finder":
 # Footer
 st.markdown("---")
 st.markdown("""
-<div style='text-align: center; color: #718096; font-size: 0.9rem; padding: 1rem;'>
-    <p>📱 Price Tracker Pro - Powered by Supabase & AI</p>
-    <p>✅ Real-time data | 🎯 Smart recommendations | ⚡ Optimized for speed</p>
+<div style='text-align:center; color:#718096; padding:1rem;'>
+    <p>📱 Price Tracker Pro - Powered by AI</p>
 </div>
 """, unsafe_allow_html=True)
