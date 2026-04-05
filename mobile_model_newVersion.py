@@ -2,10 +2,12 @@ import pandas as pd
 import numpy as np
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_absolute_error, r2_score, mean_squared_error
+from supabase import create_client, Client 
+from supabase_loader import load_and_preprocess_data
+from datetime import timedelta ,datetime , time
 import joblib
+import os
 import warnings
-from supabase import create_client, Client
-
 warnings.filterwarnings('ignore')
 
 
@@ -65,12 +67,14 @@ def load_and_preprocess_data() -> pd.DataFrame:
         left_on='product_id', right_on='id', how='left',
     )
 
-    df['price']     = pd.to_numeric(df['price'], errors='coerce')
-    df              = df.dropna(subset=['price'])
-    df['timestamp'] = pd.to_datetime(df['timestamp'], format='ISO8601', errors='coerce')
-    df['date']      = pd.to_datetime(df['timestamp'].dt.date)
-    df              = df.dropna(subset=['timestamp', 'date'])
+    df['price'] = pd.to_numeric(df['price'], errors='coerce')
+    df = df.dropna(subset=['price'])
 
+    df['timestamp'] = pd.to_datetime(df['timestamp'], format='ISO8601', errors='coerce')
+    df['date'] = df['timestamp'].dt.date
+    df['date'] = pd.to_datetime(df['date'], format='ISO8601', errors='coerce')
+
+    df = df.dropna(subset=['timestamp', 'date'])
     df['product_key'] = (
         df['name'].str.lower().str.strip() + ' '
         + df['website'].str.lower() + ' '
