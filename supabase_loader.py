@@ -21,7 +21,6 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 # ═══════════════════════════════════════════════════════════
 
 def fetch_all(table_name):
-    """Fetch all rows from Supabase using pagination"""
     all_data = []
     limit = 1000
     offset = 0
@@ -47,9 +46,8 @@ def fetch_all(table_name):
     return pd.DataFrame(all_data)
 
 
-@st.cache_data(ttl=3600)  # Cache for 1 hour
+@st.cache_data(ttl=3600) 
 def get_all_products_cached():
-    """Load ALL products once and cache - FAST!"""
     try:
         products_df = fetch_all('products')
         products_df = products_df[products_df['is_active'] == True]
@@ -214,14 +212,6 @@ def load_mobiles_from_supabase():
 
 @st.cache_data(ttl=1800)  # Cache for 30 minutes
 def get_product_recommendation(name, ram_gb, storage_gb, category, df):
-    """
-    Find best website to buy from based on:
-    - Current price
-    - Last 7 days average
-    - Price trend
-    """
-    
-    # Filter for this exact product across all websites
     product_df = df[
         (df['name'].str.lower() == name.lower()) &
         (df['ram_gb'] == ram_gb) &
@@ -230,18 +220,18 @@ def get_product_recommendation(name, ram_gb, storage_gb, category, df):
     
     if product_df.empty:
         return None
+    current_prices = (
+            product_df.sort_values('date')
+            .groupby('website')
+            .tail(1)  # Get most recent row per website
+            .copy()
+        )
     
-    # Get current prices by website
     latest_date = product_df['date'].max()
-    current_prices = product_df[product_df['date'] == latest_date].copy()
     
-    # Get last 7 days average by website
     seven_days_ago = latest_date - pd.Timedelta(days=7)
     last_7_days = product_df[product_df['date'] >= seven_days_ago]
-    
     avg_7_days = last_7_days.groupby('website')['price'].mean().to_dict()
-    
-    # Calculate trend for each website
     results = []
     
     for idx, row in current_prices.iterrows():
@@ -312,8 +302,6 @@ def get_product_recommendation(name, ram_gb, storage_gb, category, df):
 # ═══════════════════════════════════════════════════════════
 
 def load_and_preprocess_data(filepath='tablets'):
-    """Compatibility wrapper for models"""
-    
     if 'tablet' in filepath.lower():
         df = load_tablets_from_supabase()
     elif 'mobile' in filepath.lower():
