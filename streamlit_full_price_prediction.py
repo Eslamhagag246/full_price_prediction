@@ -49,9 +49,9 @@ except ImportError as e:
     st.error(f"❌ Error importing tablet_model_newVersion.py: {str(e)}")
 
 try:
-    from mobile_modell import (
+    from mobile_model_newVersion import (
         load_and_preprocess_data as load_mobile_data_func,
-        predict_next_price as predict_mobile_func,
+        forecast_product as forecast_mobile_func,
         load_global_model as load_mobile_model
     )
     try:
