@@ -907,8 +907,11 @@ elif app_mode == "🎯 Best Deal Finder":
     st.markdown("## 🎯 Find the Best Deal")
     st.markdown("Select a product to see the best website to buy from based on current prices and trends")
     
-    # Get unique products (same name/ram/storage across different websites)
-    unique_products = filtered_df.groupby(['name', 'ram_gb', 'storage_gb']).size().reset_index(name='website_count')
+   
+    unique_products = filtered_df.groupby(['name', 'ram_gb', 'storage_gb']).agg({
+        'website': 'nunique'
+    }).reset_index()
+    unique_products.columns = ['name', 'ram_gb', 'storage_gb', 'website_count']
     unique_products = unique_products[unique_products['website_count'] > 0]
     
     if unique_products.empty:
