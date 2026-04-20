@@ -36,32 +36,29 @@ except ImportError as e:
 
 try:
     from tablet_ensemble_streamlit import (
-        load_and_preprocess_data as load_tablet_data_func,
         forecast_product as forecast_tablet_func,
         load_global_model as load_tablet_model
     )
     try:
         tablet_model = load_tablet_model()
         MODELS_LOADED['tablet'] = True
-    except:
-        st.sidebar.warning("⚠️ Tablet model not trained yet")
+    except Exception:
+        st.sidebar.warning("⚠️ Tablet ensemble model not trained yet")
 except ImportError as e:
-    st.error(f"❌ Error importing tablet_model_newVersion.py: {str(e)}")
+    st.error(f"❌ Error importing tablet_ensemble_streamlit.py: {str(e)}")
 
 try:
     from mobile_ensemble_streamlit import (
-        load_and_preprocess_data as load_mobile_data_func,
         forecast_product as forecast_mobile_func,
         load_global_model as load_mobile_model
     )
     try:
         mobile_model = load_mobile_model()
         MODELS_LOADED['mobile'] = True
-    except:
-        st.sidebar.warning("⚠️ Mobile model not trained yet")
+    except Exception:
+        st.sidebar.warning("⚠️ Mobile ensemble model not trained yet")
 except ImportError as e:
-    st.error(f"❌ Error importing mobile_model_newVersion.py: {str(e)}")
-
+    st.error(f"❌ Error importing mobile_ensemble_streamlit.py: {str(e)}")
 # ═══════════════════════════════════════════════════════════
 # CUSTOM CSS - CHANGED COLORS FROM BLUE TO VIBRANT
 # ═══════════════════════════════════════════════════════════
@@ -1028,7 +1025,7 @@ elif app_mode == "🎯 Best Deal Finder":
 st.markdown("---")
 st.markdown("""
 <div style='text-align: center; color: #718096; font-size: 0.9rem; padding: 1rem;'>
-    <p>📱 Price Tracker Pro - Powered by Global Linear Regression</p>
+    <p>📱 Price Tracker Pro - Powered by LightGBM + XGBoost Ensemble</p>
     <p>Smart price forecasting with AI-driven buy/wait/hold signals</p>
 </div>
 """, unsafe_allow_html=True)
