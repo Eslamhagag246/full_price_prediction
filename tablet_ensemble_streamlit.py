@@ -9,6 +9,10 @@ import os
 import warnings
 warnings.filterwarnings('ignore')
 
+# ═══════════════════════════════════════════════════════════
+# CONFIGURATION
+# ═══════════════════════════════════════════════════════════
+
 MODEL_PATH = "tablet_ensemble_model.pkl"
 LOOKBACK = 7
 
@@ -22,6 +26,10 @@ FEATURE_COLS = [
     'gap_to_avg_3', 'gap_to_avg_7',
     'ram_normalized', 'storage_normalized', 'specs_score'
 ]
+
+# ═══════════════════════════════════════════════════════════
+# FEATURE ENGINEERING
+# ═══════════════════════════════════════════════════════════
 
 def engineer_features(pdf: pd.DataFrame, day_min: pd.Timestamp) -> pd.DataFrame:
     pdf = pdf.sort_values('date').copy()
@@ -55,6 +63,10 @@ def engineer_features(pdf: pd.DataFrame, day_min: pd.Timestamp) -> pd.DataFrame:
 
     return pdf
 
+# ═══════════════════════════════════════════════════════════
+# ENSEMBLE HELPERS
+# ═══════════════════════════════════════════════════════════
+
 def build_models():
     model_lgb = LGBMRegressor(
         n_estimators=1200,
@@ -85,15 +97,24 @@ def apply_weights(pred_lgb, pred_xgb, weights):
         weights['xgboost'] * pred_xgb
     )
 
+# ═══════════════════════════════════════════════════════════
+# LOAD MODEL (REQUIRED BY STREAMLIT)
+# ═══════════════════════════════════════════════════════════
+
 def load_global_model():
     if not os.path.exists(MODEL_PATH):
         raise FileNotFoundError(
-            f"Model file not found: {MODEL_PATH}\nTrain it first by running this file directly."
+            f"❌ Model file not found: {MODEL_PATH}\n"
+            "Please train the model first."
         )
 
     artifact = joblib.load(MODEL_PATH)
-    print(f"Loaded tablet ensemble model from {MODEL_PATH}")
+    print(f"✅ Loaded tablet ensemble model from {MODEL_PATH}")
     return artifact
+
+# ═══════════════════════════════════════════════════════════
+# FORECAST PRODUCT (REQUIRED BY STREAMLIT)
+# ═══════════════════════════════════════════════════════════
 
 def forecast_product(product_df, days_ahead=7, model=None):
     if model is None:
@@ -129,7 +150,6 @@ def forecast_product(product_df, days_ahead=7, model=None):
 
     forecast_prices = []
     forecast_dates = []
-
     context = pdf.tail(LOOKBACK).copy()
 
     for i in range(1, days_ahead + 1):
@@ -144,7 +164,6 @@ def forecast_product(product_df, days_ahead=7, model=None):
 
         temp_df = pd.concat([context, new_row], ignore_index=True)
         temp_fe = engineer_features(temp_df, global_day_min)
-
         X_pred = temp_fe.iloc[[-1]][FEATURE_COLS]
 
         pred_lgb = float(model_lgb.predict(X_pred)[0])
@@ -165,7 +184,6 @@ def forecast_product(product_df, days_ahead=7, model=None):
         if len(pdf_fe_val) > 0:
             X_val = pdf_fe_val[FEATURE_COLS]
             y_val = pdf_fe_val['target']
-
             pred_lgb_val = model_lgb.predict(X_val)
             pred_xgb_val = model_xgb.predict(X_val)
             y_pred = apply_weights(pred_lgb_val, pred_xgb_val, weights)
@@ -195,6 +213,18 @@ def forecast_product(product_df, days_ahead=7, model=None):
         'pdf': pdf
     }
 
+# ═══════════════════════════════════════════════════════════
+# COMPATIBILITY WRAPPER (OPTIONAL)
+# ═══════════════════════════════════════════════════════════
+
+def load_and_preprocess_data(filepath='tablets'):
+    from supabase_loader import load_tablets_from_supabase
+    return load_tablets_from_supabase()
+
+# ═══════════════════════════════════════════════════════════
+# TRAINING FUNCTION (OPTIONAL - FOR RETRAINING)
+# ═══════════════════════════════════════════════════════════
+
 def train_global_model():
     from supabase import create_client, Client
 
@@ -217,7 +247,7 @@ def train_global_model():
             offset += limit
         return pd.DataFrame(all_data)
 
-    def load_and_preprocess_data():
+    def load_training_data():
         products = fetch_all('products')
         prices = fetch_all('price_history')
 
@@ -233,7 +263,6 @@ def train_global_model():
 
         df['price'] = pd.to_numeric(df['price'], errors='coerce')
         df = df.dropna(subset=['price'])
-
         df['timestamp'] = pd.to_datetime(df['timestamp'], errors='coerce')
         df['date'] = pd.to_datetime(df['timestamp'].dt.date)
 
@@ -243,24 +272,18 @@ def train_global_model():
             df['storage_gb'].astype(str)
         )
 
-        df = (
+        return (
             df.groupby(['product_key', 'date'])
-            .agg({
-                'price': 'mean',
-                'ram_gb': 'first',
-                'storage_gb': 'first'
-            })
+            .agg({'price': 'mean', 'ram_gb': 'first', 'storage_gb': 'first'})
             .reset_index()
             .sort_values(['product_key', 'date'])
         )
-        return df
 
-    def add_targets(df):
+    def add_targets_train(df):
         df = df.sort_values(['product_key', 'date']).copy()
         df['target'] = df.groupby('product_key')['price'].shift(-1)
         df['target_date'] = df.groupby('product_key')['date'].shift(-1)
-        df = df.dropna(subset=['target', 'target_date']).copy()
-        return df
+        return df.dropna(subset=['target', 'target_date']).copy()
 
     def get_unique_date_splits(df, n_splits=3):
         unique_dates = np.array(sorted(pd.to_datetime(df['date']).dropna().unique()))
@@ -286,9 +309,9 @@ def train_global_model():
         split_idx = max(1, min(split_idx, len(unique_dates) - 1))
         return pd.Timestamp(unique_dates[split_idx - 1]), pd.Timestamp(unique_dates[split_idx])
 
-    def prepare_train_test_features(history_raw, train_label_raw, test_raw, day_min, feature_cols, context_days=7):
+    def prepare_train_test_features(history_raw, train_label_raw, test_raw, day_min, context_days=7):
         train_fe = engineer_features(train_label_raw, day_min)
-        train_fe = train_fe.dropna(subset=feature_cols + ['target'])
+        train_fe = train_fe.dropna(subset=FEATURE_COLS + ['target'])
 
         context = history_raw.groupby('product_key').tail(context_days).copy()
         context['is_context'] = 1
@@ -299,7 +322,7 @@ def train_global_model():
         test_ctx = pd.concat([context, test_part], ignore_index=True)
         test_fe = engineer_features(test_ctx, day_min)
         test_fe = test_fe[test_fe['is_context'] == 0]
-        test_fe = test_fe.dropna(subset=feature_cols + ['target'])
+        test_fe = test_fe.dropna(subset=FEATURE_COLS + ['target'])
 
         return train_fe, test_fe
 
@@ -310,14 +333,13 @@ def train_global_model():
             'r2': float(r2_score(y_true, y_pred)),
         }
 
-    def optimize_ensemble_weights(y_true, pred_lgb, pred_xgb, coarse_step=0.05, fine_step=0.01):
+    def optimize_weights(y_true, pred_lgb, pred_xgb, coarse_step=0.05, fine_step=0.01):
         y_true = np.asarray(y_true)
         pred_lgb = np.asarray(pred_lgb)
         pred_xgb = np.asarray(pred_xgb)
 
         def evaluate(weights):
-            preds = weights[0] * pred_lgb + weights[1] * pred_xgb
-            return mean_absolute_error(y_true, preds)
+            return mean_absolute_error(y_true, weights[0] * pred_lgb + weights[1] * pred_xgb)
 
         best_weights = np.array([0.5, 0.5], dtype=float)
         best_mae = evaluate(best_weights)
@@ -325,25 +347,23 @@ def train_global_model():
         coarse_vals = np.arange(0, 1 + coarse_step, coarse_step)
         for w_lgb in coarse_vals:
             w_xgb = 1.0 - w_lgb
-            if w_xgb < 0 or w_xgb > 1:
-                continue
-            weights = np.array([w_lgb, w_xgb], dtype=float)
-            mae = evaluate(weights)
-            if mae < best_mae:
-                best_mae = mae
-                best_weights = weights
+            if 0 <= w_xgb <= 1:
+                w = np.array([w_lgb, w_xgb], dtype=float)
+                mae = evaluate(w)
+                if mae < best_mae:
+                    best_mae = mae
+                    best_weights = w
 
         w0 = best_weights[0]
         fine_lgb = np.arange(max(0, w0 - coarse_step), min(1, w0 + coarse_step) + fine_step, fine_step)
         for w_lgb in fine_lgb:
             w_xgb = 1.0 - w_lgb
-            if w_xgb < 0 or w_xgb > 1:
-                continue
-            weights = np.array([w_lgb, w_xgb], dtype=float)
-            mae = evaluate(weights)
-            if mae < best_mae:
-                best_mae = mae
-                best_weights = weights
+            if 0 <= w_xgb <= 1:
+                w = np.array([w_lgb, w_xgb], dtype=float)
+                mae = evaluate(w)
+                if mae < best_mae:
+                    best_mae = mae
+                    best_weights = w
 
         best_weights = best_weights / best_weights.sum()
         return {
@@ -352,7 +372,7 @@ def train_global_model():
             'validation_mae': float(best_mae),
         }
 
-    def walk_forward_backtesting(df, feature_cols, n_splits=3):
+    def walk_forward_backtesting(df, n_splits=3):
         df = df.sort_values(['date', 'product_key']).copy()
         splits = get_unique_date_splits(df, n_splits=n_splits)
         oof_frames = []
@@ -369,9 +389,7 @@ def train_global_model():
                 continue
 
             day_min = history_raw['date'].min()
-            train_fe, test_fe = prepare_train_test_features(
-                history_raw, train_label_raw, test_raw, day_min, FEATURE_COLS, context_days=7
-            )
+            train_fe, test_fe = prepare_train_test_features(history_raw, train_label_raw, test_raw, day_min)
 
             if train_fe.empty or test_fe.empty:
                 continue
@@ -385,30 +403,19 @@ def train_global_model():
             model_lgb.fit(X_train, y_train)
             model_xgb.fit(X_train, y_train)
 
-            fold_df = pd.DataFrame({
+            oof_frames.append(pd.DataFrame({
                 'y_true': y_test.values,
                 'pred_lgb': model_lgb.predict(X_test),
                 'pred_xgb': model_xgb.predict(X_test),
-            })
-            oof_frames.append(fold_df)
+            }))
 
         oof_df = pd.concat(oof_frames, ignore_index=True)
-        weights = optimize_ensemble_weights(
-            y_true=oof_df['y_true'].values,
-            pred_lgb=oof_df['pred_lgb'].values,
-            pred_xgb=oof_df['pred_xgb'].values,
-        )
-
-        oof_pred = apply_weights(
-            oof_df['pred_lgb'].values,
-            oof_df['pred_xgb'].values,
-            weights
-        )
+        weights = optimize_weights(oof_df['y_true'].values, oof_df['pred_lgb'].values, oof_df['pred_xgb'].values)
+        oof_pred = apply_weights(oof_df['pred_lgb'].values, oof_df['pred_xgb'].values, weights)
         return compute_metrics(oof_df['y_true'].values, oof_pred), weights
 
-    print("Loading tablet data from Supabase...")
-    df = load_and_preprocess_data()
-    df = add_targets(df)
+    print("📊 Loading tablet data from Supabase...")
+    df = add_targets_train(load_training_data())
 
     train_end_date, final_test_start_date = get_final_split_dates(df, train_ratio=0.8)
 
@@ -416,13 +423,11 @@ def train_global_model():
     train_label_raw = df[df['target_date'] < final_test_start_date].copy()
     final_test_raw = df[df['date'] >= final_test_start_date].copy()
 
-    print("Running backtesting...")
-    bt_metrics, optimized_weights = walk_forward_backtesting(df, FEATURE_COLS, n_splits=3)
+    print("🔁 Running backtesting...")
+    bt_metrics, optimized_weights = walk_forward_backtesting(df, n_splits=3)
 
     day_min = history_train_raw['date'].min()
-    train_fe, test_fe = prepare_train_test_features(
-        history_train_raw, train_label_raw, final_test_raw, day_min, FEATURE_COLS, context_days=7
-    )
+    train_fe, test_fe = prepare_train_test_features(history_train_raw, train_label_raw, final_test_raw, day_min)
 
     X_train = train_fe[FEATURE_COLS]
     y_train = train_fe['target']
@@ -456,7 +461,7 @@ def train_global_model():
     joblib.dump(artifact, MODEL_PATH)
 
     print("\n" + "=" * 60)
-    print("TABLET ENSEMBLE PERFORMANCE")
+    print("📊 TABLET ENSEMBLE PERFORMANCE")
     print("=" * 60)
     print(f"Backtest MAE  : {bt_metrics['mae']:,.2f}")
     print(f"Backtest RMSE : {bt_metrics['rmse']:,.2f}")
@@ -468,12 +473,16 @@ def train_global_model():
     print(f"Test RMSE     : {test_metrics['rmse']:,.2f}")
     print(f"Test R²       : {test_metrics['r2']:.4f}")
     print(f"Weights       : LGB={optimized_weights['lightgbm']:.4f}, XGB={optimized_weights['xgboost']:.4f}")
-    print(f"Saved model   : {MODEL_PATH}")
+    print(f"💾 Saved model: {MODEL_PATH}")
 
     return artifact
 
+# ═══════════════════════════════════════════════════════════
+# MAIN - FOR TRAINING
+# ═══════════════════════════════════════════════════════════
+
 if __name__ == "__main__":
     print("=" * 60)
-    print("TRAINING TABLET ENSEMBLE MODEL")
+    print("🚀 TRAINING GLOBAL TABLET ENSEMBLE MODEL")
     print("=" * 60)
     train_global_model()
