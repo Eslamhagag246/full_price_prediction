@@ -35,7 +35,7 @@ except ImportError as e:
     SUPABASE_AVAILABLE = False
 
 try:
-    from tablet_model_newVersion import (
+    from tablet_ensemble_streamlit import (
         load_and_preprocess_data as load_tablet_data_func,
         forecast_product as forecast_tablet_func,
         load_global_model as load_tablet_model
@@ -49,7 +49,7 @@ except ImportError as e:
     st.error(f"❌ Error importing tablet_model_newVersion.py: {str(e)}")
 
 try:
-    from mobile_model_newVersion import (
+    from mobile_ensemble_streamlit import (
         load_and_preprocess_data as load_mobile_data_func,
         forecast_product as forecast_mobile_func,
         load_global_model as load_mobile_model
