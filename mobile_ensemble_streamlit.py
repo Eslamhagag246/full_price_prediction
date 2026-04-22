@@ -136,11 +136,11 @@ def forecast_product(product_df, days_ahead=7, model=None):
     pdf['price'] = pd.to_numeric(pdf['price'], errors='coerce')
     pdf = pdf.dropna(subset=['date', 'price']).copy()
 
+    
     actual_last_price = float(pdf['price'].iloc[-1])
     last_date = pd.to_datetime(pdf['date'].iloc[-1])
     last_ram = float(pdf['ram_gb'].iloc[-1])
     last_storage = float(pdf['storage_gb'].iloc[-1])
- 
 
     min_price = float(pdf['price'].min())
     max_price = float(pdf['price'].max())
@@ -153,13 +153,13 @@ def forecast_product(product_df, days_ahead=7, model=None):
     forecast_dates = []
     context = pdf.tail(LOOKBACK).copy()
     rolling_price = actual_last_price
-    
+
     for i in range(1, days_ahead + 1):
         next_date = last_date + timedelta(days=i)
 
         new_row = pd.DataFrame({
             'date': [next_date],
-            'price': [last_price],
+            'price': [rolling_price],
             'ram_gb': [last_ram],
             'storage_gb': [last_storage]
         })
@@ -205,7 +205,7 @@ def forecast_product(product_df, days_ahead=7, model=None):
     return {
         'forecast_dates': forecast_dates,
         'forecast_prices': forecast_prices,
-        'last_price': actual_last_price,
+        'last_price': actual_last_price,   
         'min_price': min_price,
         'max_price': max_price,
         'avg_price': avg_price,
@@ -217,7 +217,7 @@ def forecast_product(product_df, days_ahead=7, model=None):
 
 # ═══════════════════════════════════════════════════════════
 # COMPATIBILITY WRAPPER (OPTIONAL)
-# ═══════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════
 
 def load_and_preprocess_data(filepath='tablets'):
     from supabase_loader import load_mobiles_from_supabase
@@ -232,6 +232,8 @@ def train_global_model():
 
     SUPABASE_URL = "https://ryiqzurrmvaftbnpiopx.supabase.co"
     SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ5aXF6dXJybXZhZnRibnBpb3B4Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MzcwMDY5NywiZXhwIjoyMDg5Mjc2Njk3fQ.7uVZj7t93AWOZd3CsU__AZTXQyNDUxM3IN3VWurzG04'
+
+
     supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
     def fetch_all(table_name):
@@ -333,43 +335,11 @@ def train_global_model():
             'r2': float(r2_score(y_true, y_pred)),
         }
 
-    def optimize_weights(y_true, pred_lgb, pred_xgb, coarse_step=0.05, fine_step=0.01):
-        y_true = np.asarray(y_true)
-        pred_lgb = np.asarray(pred_lgb)
-        pred_xgb = np.asarray(pred_xgb)
-
-        def evaluate(weights):
-            return mean_absolute_error(y_true, weights[0] * pred_lgb + weights[1] * pred_xgb)
-
-        best_weights = np.array([0.5, 0.5], dtype=float)
-        best_mae = evaluate(best_weights)
-
-        coarse_vals = np.arange(0, 1 + coarse_step, coarse_step)
-        for w_lgb in coarse_vals:
-            w_xgb = 1.0 - w_lgb
-            if 0 <= w_xgb <= 1:
-                w = np.array([w_lgb, w_xgb], dtype=float)
-                mae = evaluate(w)
-                if mae < best_mae:
-                    best_mae = mae
-                    best_weights = w
-
-        w0 = best_weights[0]
-        fine_lgb = np.arange(max(0, w0 - coarse_step), min(1, w0 + coarse_step) + fine_step, fine_step)
-        for w_lgb in fine_lgb:
-            w_xgb = 1.0 - w_lgb
-            if 0 <= w_xgb <= 1:
-                w = np.array([w_lgb, w_xgb], dtype=float)
-                mae = evaluate(w)
-                if mae < best_mae:
-                    best_mae = mae
-                    best_weights = w
-
-        best_weights = best_weights / best_weights.sum()
+    def optimize_weights(y_true=None, pred_lgb=None, pred_xgb=None, coarse_step=0.05, fine_step=0.01):
         return {
-            'lightgbm': float(best_weights[0]),
-            'xgboost': float(best_weights[1]),
-            'validation_mae': float(best_mae),
+            'lightgbm': 0.85,
+            'xgboost': 0.15,
+            'validation_mae': np.nan,
         }
 
     def walk_forward_backtesting(df, n_splits=3):
