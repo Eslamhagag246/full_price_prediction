@@ -136,7 +136,7 @@ def forecast_product(product_df, days_ahead=7, model=None):
     pdf['price'] = pd.to_numeric(pdf['price'], errors='coerce')
     pdf = pdf.dropna(subset=['date', 'price']).copy()
 
-    last_price = float(pdf['price'].iloc[-1])
+    actual_last_price = float(pdf['price'].iloc[-1])
     last_date = pd.to_datetime(pdf['date'].iloc[-1])
     last_ram = float(pdf['ram_gb'].iloc[-1])
     last_storage = float(pdf['storage_gb'].iloc[-1])
@@ -151,6 +151,7 @@ def forecast_product(product_df, days_ahead=7, model=None):
     forecast_prices = []
     forecast_dates = []
     context = pdf.tail(LOOKBACK).copy()
+    rolling_price = actual_last_price
 
     for i in range(1, days_ahead + 1):
         next_date = last_date + timedelta(days=i)
@@ -175,7 +176,7 @@ def forecast_product(product_df, days_ahead=7, model=None):
 
         new_row['price'] = predicted_price
         context = pd.concat([context.iloc[1:], new_row], ignore_index=True)
-        last_price = predicted_price
+        rolling_price = predicted_price 
 
     if len(pdf_fe) > 1:
         pdf_fe['target'] = pdf_fe['price'].shift(-1)
@@ -203,7 +204,7 @@ def forecast_product(product_df, days_ahead=7, model=None):
     return {
         'forecast_dates': forecast_dates,
         'forecast_prices': forecast_prices,
-        'last_price': last_price,
+        'last_price': actual_last_price,
         'min_price': min_price,
         'max_price': max_price,
         'avg_price': avg_price,
