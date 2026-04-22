@@ -374,8 +374,7 @@ def create_forecast_chart(result, device_type, date_range=None):
         hovermode='x unified',
         plot_bgcolor='white',
         paper_bgcolor='white',
-        height=500,
-        hovermode='x unified'
+        height=500
     )
     
     return fig
