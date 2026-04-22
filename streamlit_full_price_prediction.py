@@ -22,6 +22,7 @@ st.set_page_config(
 MODELS_LOADED = {'tablet': False, 'mobile': False}
 tablet_model = None
 mobile_model = None
+
 try:
     from supabase_loader import (
         load_tablets_from_supabase,
@@ -32,10 +33,12 @@ except ImportError as e:
     st.error(f"❌ Error importing supabase_loader.py: {str(e)}")
     st.error("Make sure supabase_loader.py is in the same directory!")
     SUPABASE_AVAILABLE = False
+
 try:
     from tablet_ensemble_streamlit import (
         forecast_product as forecast_tablet_func,
-        load_global_model as load_tablet_model)
+        load_global_model as load_tablet_model
+    )
     try:
         tablet_model = load_tablet_model()
         MODELS_LOADED['tablet'] = True
@@ -43,17 +46,19 @@ try:
         st.sidebar.warning("⚠️ Tablet ensemble model not trained yet")
 except ImportError as e:
     st.error(f"❌ Error importing tablet_ensemble_streamlit.py: {str(e)}")
+
 try:
     from mobile_ensemble_streamlit import (
         forecast_product as forecast_mobile_func,
-        load_global_model as load_mobile_model)
+        load_global_model as load_mobile_model
+    )
     try:
         mobile_model = load_mobile_model()
         MODELS_LOADED['mobile'] = True
     except Exception:
         st.sidebar.warning("⚠️ Mobile ensemble model not trained yet")
 except ImportError as e:
-    st.error(f"❌ Error importing mobile_ensemble_streamlit.py: {str(e)}")\
+    st.error(f"❌ Error importing mobile_ensemble_streamlit.py: {str(e)}")
 # ═══════════════════════════════════════════════════════════
 # CUSTOM CSS - CHANGED COLORS FROM BLUE TO VIBRANT
 # ═══════════════════════════════════════════════════════════
@@ -206,33 +211,39 @@ section[data-testid="stSidebar"] * { color: white !important; }
 
 @st.cache_data(ttl=3600)
 def load_data(device_type):
-    if device_type == "Tablets":
-        st.info("📊 Loading tablet data from Supabase...")
-        df = load_tablets_from_supabase()
-        source = "Supabase (tablets)"
-    else:
-        st.info("📊 Loading mobile data from Supabase...")
-        df = load_mobiles_from_supabase()
-        source = "Supabase (mobiles)"
-    
-    if df.empty:
-        st.error(f"❌ No {device_type.lower()} data found in Supabase!")
-        st.info("Make sure your scraper has run and data exists in the database.")
-        return None, source
-    
-    st.success(f"✅ Loaded {len(df):,} records from Supabase!")
-    return df, source
+    # ⚠️ No st.* calls allowed inside @st.cache_data — they silently break caching.
+    # Status is returned as a 4-tuple and rendered by the caller outside the cache.
+    if not SUPABASE_AVAILABLE:
+        return None, "Supabase", "error", "❌ Supabase loader not available!"
+    try:
+        if device_type == "Tablets":
+            df = load_tablets_from_supabase()
+            source = "Supabase (tablets)"
+        else:
+            df = load_mobiles_from_supabase()
+            source = "Supabase (mobiles)"
+
+        if df.empty:
+            return None, source, "error", f"❌ No {device_type.lower()} data found in Supabase!"
+
+        return df, source, "success", f"✅ Loaded {len(df):,} records from Supabase!"
+
+    except Exception as e:
+        import traceback
+        return None, "Supabase", "exception", str(e) + "\n" + traceback.format_exc()
 
 def generate_buy_signal(result):
+    """Generate buy/wait/hold signal based on forecast"""
     last_price = result['last_price']
     future_price = result['forecast_prices'][-1]
     change_pct = ((future_price - last_price) / last_price) * 100
     mae = result['mae']
     confidence = result['confidence']
     
+    # Volatility check
     volatility_ratio = (mae / last_price) * 100
     
-    if volatility_ratio > 10:  
+    if volatility_ratio > 10:  # High volatility
         signal_type = "volatile"
         signal_icon = "⚠️"
         signal_title = "CAUTION - HIGH PRICE VOLATILITY"
@@ -271,8 +282,10 @@ def generate_buy_signal(result):
 
 
 def create_forecast_chart(result, device_type, date_range=None):
+    """Create forecast chart with optional date range"""
     pdf = result['pdf']
     
+    # Apply date range filter if specified
     if date_range:
         start_date, end_date = date_range
         pdf = pdf[(pdf['date'] >= start_date) & (pdf['date'] <= end_date)]
@@ -280,7 +293,8 @@ def create_forecast_chart(result, device_type, date_range=None):
     forecast_dates = result['forecast_dates']
     forecast_prices = result['forecast_prices']
     mae = result['mae']
-
+    
+    # Colors
     if device_type == "Tablets":
         color_main = '#667eea'
         color_forecast = '#f093fb'
@@ -290,6 +304,7 @@ def create_forecast_chart(result, device_type, date_range=None):
     
     fig = go.Figure()
     
+    # Historical prices
     fig.add_trace(go.Scatter(
         x=pdf['date'],
         y=pdf['price'],
@@ -299,7 +314,8 @@ def create_forecast_chart(result, device_type, date_range=None):
         marker=dict(size=6, color=color_main),
         hovertemplate='<b>%{x}</b><br>EGP %{y:,.0f}<extra></extra>'
     ))
-
+    
+    # Rolling average
     if 'rolling_avg_7' in pdf.columns:
         fig.add_trace(go.Scatter(
             x=pdf['date'],
@@ -311,6 +327,7 @@ def create_forecast_chart(result, device_type, date_range=None):
             hovertemplate='<b>%{x}</b><br>Avg: EGP %{y:,.0f}<extra></extra>'
         ))
     
+    # Connection to forecast
     last_hist_date = pdf['date'].iloc[-1]
     last_hist_price = pdf['price'].iloc[-1]
     
@@ -323,6 +340,7 @@ def create_forecast_chart(result, device_type, date_range=None):
         hoverinfo='skip'
     ))
     
+    # Forecast
     fig.add_trace(go.Scatter(
         x=forecast_dates,
         y=forecast_prices,
@@ -333,6 +351,7 @@ def create_forecast_chart(result, device_type, date_range=None):
         hovertemplate='<b>%{x}</b><br>Forecast: EGP %{y:,.0f}<extra></extra>'
     ))
     
+    # Confidence band
     upper = [p + mae for p in forecast_prices]
     lower = [max(0, p - mae) for p in forecast_prices]
     
@@ -347,6 +366,7 @@ def create_forecast_chart(result, device_type, date_range=None):
         hoverinfo='skip'
     ))
     
+    # Today marker
     today = pd.Timestamp.today().normalize()
     today_str = today.strftime('%Y-%m-%d')
     
@@ -374,13 +394,14 @@ def create_forecast_chart(result, device_type, date_range=None):
         hovermode='x unified',
         plot_bgcolor='white',
         paper_bgcolor='white',
-        height=500
+        height=500,
     )
     
     return fig
 
 
 def create_comparison_chart(results, product_names):
+    """Create comparison chart for multiple products"""
     fig = go.Figure()
     
     colors = ['#667eea', '#f093fb', '#f5576c', '#feca57']
@@ -422,6 +443,7 @@ def create_comparison_chart(results, product_names):
 # ═══════════════════════════════════════════════════════════
 # MAIN APP
 # ═══════════════════════════════════════════════════════════
+
 st.title("📱 Price Tracker Pro")
 st.markdown("**Track & Forecast Prices for Tablets & Mobile Phones**")
 st.markdown("---")
@@ -429,6 +451,8 @@ st.markdown("---")
 # ═══════════════════════════════════════════════════════════
 # SIDEBAR
 # ═══════════════════════════════════════════════════════════
+
+# Initialize session state
 if 'show_market_insights' not in st.session_state:
     st.session_state.show_market_insights = False
 
@@ -441,8 +465,10 @@ with st.sidebar:
         index=0,
         label_visibility="collapsed"
     )
+    
     st.markdown("---")
     
+    # NEW: Mode Selection
     st.markdown("### 🎯 Mode")
     app_mode = st.radio(
         "Select Mode:",
@@ -452,6 +478,7 @@ with st.sidebar:
     
     st.markdown("---")
     
+    # Check model
     model_key = 'tablet' if device_type == "Tablets" else 'mobile'
     
     if app_mode == "🔮 Price Forecast":
@@ -461,14 +488,30 @@ with st.sidebar:
             st.error(f"❌ {device_type} model not found")
             st.stop()
     
-    df, filepath = load_data(device_type)
-    
+    # Load data
+    # Load data — status messages displayed HERE (outside cache), not inside load_data
+    df, filepath, status, message = load_data(device_type)
+
+    if status == "error":
+        st.error(message)
+        if "scraper" in message.lower() or "supabase" in message.lower():
+            st.info("Make sure your scraper has run and data exists in the database.")
+        st.stop()
+    elif status == "exception":
+        st.error(f"❌ Error loading data from Supabase: {message.splitlines()[0]}")
+        st.code(message)
+        st.stop()
+    elif status == "success":
+        st.success(message)
+
     if df is None:
         st.stop()
-
+    
+    # Market Insights Section
     st.markdown("---")
     
     if not st.session_state.show_market_insights:
+        # Large, prominent Market Insights button
         st.markdown('<div style="margin: 1rem 0;">', unsafe_allow_html=True)
         
         insights_clicked = st.button(
@@ -484,6 +527,7 @@ with st.sidebar:
             st.rerun()
             
     else:
+        # Small, subtle back button
         st.markdown('<div style="margin: 0.5rem 0;">', unsafe_allow_html=True)
         
         back_clicked = st.button(
@@ -678,7 +722,10 @@ if app_mode == "🔮 Price Forecast":
     product_infos = []
     
     for product_key in selected_products:
-        product_df = df[df['product_key'] == product_key].copy()
+        # Sort by date ascending — the forecast function reads iloc[-1] for last_price.
+        # Without this sort, the row order from Supabase is undefined and last_price
+        # will be wrong, making Current Price and Expected Change both incorrect.
+        product_df = df[df['product_key'] == product_key].copy().sort_values('date').reset_index(drop=True)
         product_info = product_groups[product_groups['product_key'] == product_key].iloc[0]
         product_infos.append(product_info)
         
@@ -867,9 +914,9 @@ elif app_mode == "🎯 Best Deal Finder":
     st.markdown("## 🎯 Find the Best Deal")
     st.markdown("Select a product to see the best website to buy from based on current prices and trends")
     
-    # Get unique products (same name/ram/storage across different websites)
+   
     unique_products = filtered_df.groupby(['name', 'ram_gb', 'storage_gb']).agg({
-        'website': 'nunique'  # Count UNIQUE websites, not all records
+        'website': 'nunique'
     }).reset_index()
     unique_products.columns = ['name', 'ram_gb', 'storage_gb', 'website_count']
     unique_products = unique_products[unique_products['website_count'] > 0]
@@ -897,12 +944,17 @@ elif app_mode == "🎯 Best Deal Finder":
     st.markdown("---")
     
     # Get recommendation
+    # Fix: 'Mobile Phones' → 'mobile', 'Tablets' → 'tablet'
+    # device_type.lower()[:-1] produced 'mobile phone' (wrong) for "Mobile Phones"
+    category_map = {"Tablets": "tablet", "Mobile Phones": "mobile"}
+    category_str = category_map.get(device_type, device_type.lower().split()[0])
+
     with st.spinner("🔍 Analyzing prices across websites..."):
         recommendation = get_product_recommendation(
             name=selected_product['name'],
             ram_gb=selected_product['ram_gb'],
             storage_gb=selected_product['storage_gb'],
-            category=device_type.lower()[:-1],
+            category=category_str,
             df=df
         )
     
@@ -988,7 +1040,7 @@ elif app_mode == "🎯 Best Deal Finder":
 st.markdown("---")
 st.markdown("""
 <div style='text-align: center; color: #718096; font-size: 0.9rem; padding: 1rem;'>
-    <p>📱 Price Tracker Pro - Powered by Global Linear Regression</p>
+    <p>📱 Price Tracker Pro - Powered by LightGBM + XGBoost Ensemble</p>
     <p>Smart price forecasting with AI-driven buy/wait/hold signals</p>
 </div>
 """, unsafe_allow_html=True)
