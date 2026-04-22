@@ -1,10 +1,16 @@
+
 import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
-import plotly.express as px
-from datetime import timedelta, datetime
+from datetime import datetime
 import os
+
+try:
+    from streamlit_autorefresh import st_autorefresh
+    AUTO_REFRESH_AVAILABLE = True
+except ImportError:
+    AUTO_REFRESH_AVAILABLE = False
 
 # ═══════════════════════════════════════════════════════════
 # PAGE CONFIG
@@ -15,6 +21,20 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
+AUTO_REFRESH_SECONDS = int(os.getenv("AUTO_REFRESH_SECONDS", "300"))
+
+def handle_auto_refresh():
+    if not AUTO_REFRESH_AVAILABLE:
+        return
+    tick = st_autorefresh(interval=AUTO_REFRESH_SECONDS * 1000, key="auto_data_refresh")
+    if "last_auto_refresh_tick" not in st.session_state:
+        st.session_state.last_auto_refresh_tick = tick
+    elif tick != st.session_state.last_auto_refresh_tick:
+        st.session_state.last_auto_refresh_tick = tick
+        st.cache_data.clear()
+
+handle_auto_refresh()
 
 # ═══════════════════════════════════════════════════════════
 # IMPORT MODELS
@@ -200,6 +220,21 @@ section[data-testid="stSidebar"] * { color: white !important; }
     font-weight: 600;
     margin-top: 1rem;
 }
+
+.buy-button:hover {
+    filter: brightness(1.05);
+}
+
+div[data-testid="stDataFrame"] {
+    border-radius: 12px;
+    overflow: hidden;
+}
+
+div[data-testid="stMetric"] {
+    background: #ffffff;
+    border-radius: 12px;
+    padding: 0.5rem 0.75rem;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -249,7 +284,6 @@ def _load_data_cached(device_type: str):
     if df is None or df.empty:
         return None, source
 
-    # Defensive typing / sorting to make current price reliable
     df = df.copy()
     if "price" in df.columns:
         df["price"] = pd.to_numeric(df["price"], errors="coerce")
@@ -510,11 +544,7 @@ with st.sidebar:
         help="Price Forecast: See 7-day predictions | Best Deal Finder: Find cheapest website"
     )
 
-    st.markdown("---")
 
-    if st.button("🔄 Refresh cached data", use_container_width=True):
-        st.cache_data.clear()
-        st.rerun()
 
     model_key = 'tablet' if device_type == "Tablets" else 'mobile'
 
@@ -531,7 +561,10 @@ with st.sidebar:
     if df is None:
         st.stop()
 
-    st.caption(f"Data source: {filepath} | Cached for 1 hour unless you click Refresh")
+    if AUTO_REFRESH_AVAILABLE:
+        st.caption(f"Data source: {filepath} | Cache auto-refreshes every {AUTO_REFRESH_SECONDS // 60 if AUTO_REFRESH_SECONDS >= 60 else AUTO_REFRESH_SECONDS} {'minutes' if AUTO_REFRESH_SECONDS >= 60 else 'seconds'}")
+    else:
+        st.caption(f"Data source: {filepath} | Cached data will refresh automatically only after rerun. Install streamlit-autorefresh for timed refresh.")
 
     st.markdown("---")
 
@@ -785,17 +818,10 @@ if app_mode == "🔮 Price Forecast":
         stat_col1, stat_col2, stat_col3, stat_col4 = st.columns(4)
 
         with stat_col1:
-            date_note = ""
-            if actual_current_date is not None and pd.notna(actual_current_date):
-                try:
-                    date_note = pd.Timestamp(actual_current_date).strftime("%Y-%m-%d")
-                except Exception:
-                    date_note = ""
             st.markdown(f"""
             <div class="stat-card">
                 <div class="stat-label">Current Price</div>
                 <div class="stat-value">{f"EGP {actual_current_price:,.0f}" if pd.notna(actual_current_price) else "N/A"}</div>
-                <div style="font-size:0.9rem; margin-top:0.3rem;">{date_note}</div>
             </div>
             """, unsafe_allow_html=True)
 
