@@ -211,8 +211,9 @@ section[data-testid="stSidebar"] * { color: white !important; }
 
 @st.cache_data(ttl=3600)
 def load_data(device_type):
-    # ⚠️ No st.* calls allowed inside @st.cache_data — they silently break caching.
-    # Status is returned as a 4-tuple and rendered by the caller outside the cache.
+    # ⚠️  No st.* calls inside @st.cache_data — Streamlit detects them and
+    # silently skips caching entirely, re-running the full DB load on every
+    # widget interaction. Status is returned as a 4-tuple and shown by the caller.
     if not SUPABASE_AVAILABLE:
         return None, "Supabase", "error", "❌ Supabase loader not available!"
     try:
@@ -488,8 +489,8 @@ with st.sidebar:
             st.error(f"❌ {device_type} model not found")
             st.stop()
     
-    # Load data
-    # Load data — status messages displayed HERE (outside cache), not inside load_data
+    # Load data — status messages shown HERE (outside cache), not inside load_data.
+    # This is what makes @st.cache_data actually work for both Tablets and Mobile Phones.
     df, filepath, status, message = load_data(device_type)
 
     if status == "error":
@@ -722,19 +723,28 @@ if app_mode == "🔮 Price Forecast":
     product_infos = []
     
     for product_key in selected_products:
-        # Sort by date ascending — the forecast function reads iloc[-1] for last_price.
-        # Without this sort, the row order from Supabase is undefined and last_price
-        # will be wrong, making Current Price and Expected Change both incorrect.
+        # Sort by date — the model reads iloc[-1] for last_price.
+        # Without sorting, Supabase row order is undefined.
         product_df = df[df['product_key'] == product_key].copy().sort_values('date').reset_index(drop=True)
         product_info = product_groups[product_groups['product_key'] == product_key].iloc[0]
         product_infos.append(product_info)
-        
+
+        # Capture the true current price HERE, before calling either model.
+        # Both tablet and mobile models have a bug where last_price gets
+        # overwritten by the final forecasted value inside the loop.
+        # Overwriting result['last_price'] after the call guarantees correctness
+        # for both categories without needing to edit the tablet model file.
+        actual_last_price = float(product_df['price'].iloc[-1])
+
         with st.spinner(f"🤖 Generating forecast for {product_info['name']}..."):
             try:
                 if device_type == "Tablets":
                     result = forecast_tablet_func(product_df, days_ahead=7, model=tablet_model)
                 else:
                     result = forecast_mobile_func(product_df, days_ahead=7, model=mobile_model)
+                # Always restore the real last price — guards against the loop-clobber
+                # bug in both model files.
+                result['last_price'] = actual_last_price
                 results.append(result)
             except Exception as e:
                 st.error(f"❌ Error: {str(e)}")
@@ -863,7 +873,10 @@ if app_mode == "🔮 Price Forecast":
         
         # Download forecast button
         forecast_df = pd.DataFrame({
-            'Date': [d.strftime('%Y-%m-%d') for d in result['forecast_dates']],
+            'Date': [
+                f"Tomorrow ({d.strftime('%Y-%m-%d')})" if i == 0 else d.strftime('%Y-%m-%d')
+                for i, d in enumerate(result['forecast_dates'])
+            ],
             'Forecasted Price (EGP)': result['forecast_prices'],
             'Lower Bound (EGP)': [max(0, p - result['mae']) for p in result['forecast_prices']],
             'Upper Bound (EGP)': [p + result['mae'] for p in result['forecast_prices']]
@@ -879,14 +892,18 @@ if app_mode == "🔮 Price Forecast":
         
         # Forecast table
         st.markdown("### 📅 7-Day Forecast Breakdown")
-        
-        forecast_table = pd.DataFrame({
-            'Date': [d.strftime('%A, %B %d') for d in result['forecast_dates']],
-            'Forecasted Price': [f"EGP {p:,.0f}" for p in result['forecast_prices']],
-            'Lower Bound': [f"EGP {max(0, p - result['mae']):,.0f}" for p in result['forecast_prices']],
-            'Upper Bound': [f"EGP {(p + result['mae']):,.0f}" for p in result['forecast_prices']]
-        })
-        
+
+        forecast_rows = []
+        for idx, (d, p) in enumerate(zip(result['forecast_dates'], result['forecast_prices'])):
+            day_label = f"📍 Tomorrow ({d.strftime('%A, %B %d')})" if idx == 0 else d.strftime('%A, %B %d')
+            forecast_rows.append({
+                'Day': day_label,
+                'Forecasted Price': f"EGP {p:,.0f}",
+                'Lower Bound': f"EGP {max(0, p - result['mae']):,.0f}",
+                'Upper Bound': f"EGP {(p + result['mae']):,.0f}"
+            })
+
+        forecast_table = pd.DataFrame(forecast_rows)
         st.dataframe(forecast_table, use_container_width=True, hide_index=True)
         
         # Stats
@@ -944,17 +961,12 @@ elif app_mode == "🎯 Best Deal Finder":
     st.markdown("---")
     
     # Get recommendation
-    # Fix: 'Mobile Phones' → 'mobile', 'Tablets' → 'tablet'
-    # device_type.lower()[:-1] produced 'mobile phone' (wrong) for "Mobile Phones"
-    category_map = {"Tablets": "tablet", "Mobile Phones": "mobile"}
-    category_str = category_map.get(device_type, device_type.lower().split()[0])
-
     with st.spinner("🔍 Analyzing prices across websites..."):
         recommendation = get_product_recommendation(
             name=selected_product['name'],
             ram_gb=selected_product['ram_gb'],
             storage_gb=selected_product['storage_gb'],
-            category=category_str,
+            category=device_type.lower()[:-1],
             df=df
         )
     
