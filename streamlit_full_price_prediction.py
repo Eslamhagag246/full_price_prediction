@@ -211,32 +211,26 @@ section[data-testid="stSidebar"] * { color: white !important; }
 
 @st.cache_data(ttl=3600)
 def load_data(device_type):
+    # NOTE: No st.* display calls inside this function — they break @st.cache_data silently.
+    # All status messages are returned as part of the result and shown by the caller.
     if not SUPABASE_AVAILABLE:
-        st.error("❌ Supabase loader not available!")
-        return None, "Supabase"
+        return None, "Supabase", "error", "❌ Supabase loader not available!"
     try:
         if device_type == "Tablets":
-            st.info("📊 Loading tablet data from Supabase...")
             df = load_tablets_from_supabase()
             source = "Supabase (tablets)"
         else:
-            st.info("📊 Loading mobile data from Supabase...")
             df = load_mobiles_from_supabase()
             source = "Supabase (mobiles)"
         
         if df.empty:
-            st.error(f"❌ No {device_type.lower()} data found in Supabase!")
-            st.info("Make sure your scraper has run and data exists in the database.")
-            return None, source
+            return None, source, "error", f"❌ No {device_type.lower()} data found in Supabase!"
         
-        st.success(f"✅ Loaded {len(df):,} records from Supabase!")
-        return df, source
+        return df, source, "success", f"✅ Loaded {len(df):,} records from Supabase!"
         
     except Exception as e:
-        st.error(f"❌ Error loading data from Supabase: {str(e)}")
         import traceback
-        st.code(traceback.format_exc())
-        return None, "Supabase"
+        return None, "Supabase", "exception", str(e) + "\n" + traceback.format_exc()
 
 def generate_buy_signal(result):
     """Generate buy/wait/hold signal based on forecast"""
@@ -494,9 +488,21 @@ with st.sidebar:
             st.error(f"❌ {device_type} model not found")
             st.stop()
     
-    # Load data
-    df, filepath = load_data(device_type)
-    
+    # Load data — show status messages here (outside cache), not inside load_data
+    df, filepath, status, message = load_data(device_type)
+
+    if status == "error":
+        st.error(message)
+        if "scraper" in message.lower() or "Supabase" in message:
+            st.info("Make sure your scraper has run and data exists in the database.")
+        st.stop()
+    elif status == "exception":
+        st.error(f"❌ Error loading data from Supabase: {message.splitlines()[0]}")
+        st.code(message)
+        st.stop()
+    elif status == "success":
+        st.success(message)
+
     if df is None:
         st.stop()
     
@@ -715,7 +721,9 @@ if app_mode == "🔮 Price Forecast":
     product_infos = []
     
     for product_key in selected_products:
-        product_df = df[df['product_key'] == product_key].copy()
+        # Sort by date ascending so the forecast function always sees the latest
+        # price as the last row — fixes current price and expected change display.
+        product_df = df[df['product_key'] == product_key].copy().sort_values('date').reset_index(drop=True)
         product_info = product_groups[product_groups['product_key'] == product_key].iloc[0]
         product_infos.append(product_info)
         
