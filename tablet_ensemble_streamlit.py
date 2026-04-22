@@ -158,7 +158,7 @@ def forecast_product(product_df, days_ahead=7, model=None):
 
         new_row = pd.DataFrame({
             'date': [next_date],
-            'price': [last_price],
+            'price': [actual_last_price],
             'ram_gb': [last_ram],
             'storage_gb': [last_storage]
         })
