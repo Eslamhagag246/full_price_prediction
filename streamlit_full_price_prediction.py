@@ -571,6 +571,7 @@ def generate_buy_signal(result):
 
 def create_forecast_chart(result, device_type, date_range=None):
     pdf = result['pdf'].copy()
+
     if date_range:
         s, e = date_range
         pdf = pdf[(pdf['date'] >= s) & (pdf['date'] <= e)]
@@ -579,55 +580,185 @@ def create_forecast_chart(result, device_type, date_range=None):
     fp = result['forecast_prices']
     mae = result['mae']
 
-    c_hist = '#667eea' if device_type == "Tablets" else '#f5576c'
-    c_fore = '#f093fb' if device_type == "Tablets" else '#feca57'
+    # Premium graph colors
+    c_hist = '#2563eb'       # blue historical curved line
+    c_fore = '#0ea5e9'       # lighter blue forecast line
+    c_band = 'rgba(14, 165, 233, 0.18)'
+    c_text = '#000000'       # black graph text
+    c_grid = 'rgba(0,0,0,0.12)'
 
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=pdf['date'], y=pdf['price'],
-        mode='lines+markers', name='Historical Price',
-        line=dict(color=c_hist, width=3), marker=dict(size=5, color=c_hist),
-        hovertemplate='<b>%{x|%b %d}</b><br>EGP %{y:,.0f}<extra></extra>'))
 
-    if 'rolling_avg_7' in pdf.columns:
-        fig.add_trace(go.Scatter(x=pdf['date'], y=pdf['rolling_avg_7'],
-            mode='lines', name='7-Day Avg',
-            line=dict(color=c_hist, width=2, dash='dot'), opacity=0.5,
-            hovertemplate='<b>%{x|%b %d}</b><br>Avg: EGP %{y:,.0f}<extra></extra>'))
-
-    # Bridge line
+    # Historical price line
     fig.add_trace(go.Scatter(
-        x=[pdf['date'].iloc[-1], fd[0]], y=[pdf['price'].iloc[-1], fp[0]],
-        mode='lines', line=dict(color='#a0aec0', width=2, dash='dot'),
-        showlegend=False, hoverinfo='skip'))
+        x=pdf['date'],
+        y=pdf['price'],
+        mode='lines+markers',
+        name='Historical Price',
+        line=dict(
+            color=c_hist,
+            width=4,
+            shape='spline',
+            smoothing=1.1
+        ),
+        marker=dict(
+            size=6,
+            color=c_hist,
+            line=dict(color='white', width=1)
+        ),
+        hovertemplate='<b>%{x|%b %d}</b><br>Price: EGP %{y:,.0f}<extra></extra>'
+    ))
 
-    fig.add_trace(go.Scatter(x=fd, y=fp,
-        mode='lines+markers', name='7-Day Forecast',
-        line=dict(color=c_fore, width=3, dash='dash'),
-        marker=dict(size=8, symbol='diamond', color=c_fore),
-        hovertemplate='<b>%{x|%b %d}</b><br>Forecast: EGP %{y:,.0f}<extra></extra>'))
+    # Rolling average
+    if 'rolling_avg_7' in pdf.columns:
+        fig.add_trace(go.Scatter(
+            x=pdf['date'],
+            y=pdf['rolling_avg_7'],
+            mode='lines',
+            name='7-Day Avg',
+            line=dict(
+                color='#1e40af',
+                width=2.5,
+                dash='dot',
+                shape='spline',
+                smoothing=1.1
+            ),
+            opacity=0.75,
+            hovertemplate='<b>%{x|%b %d}</b><br>Avg: EGP %{y:,.0f}<extra></extra>'
+        ))
 
+    # Bridge line from last historical point to first forecast point
+    fig.add_trace(go.Scatter(
+        x=[pdf['date'].iloc[-1], fd[0]],
+        y=[pdf['price'].iloc[-1], fp[0]],
+        mode='lines',
+        line=dict(
+            color='#64748b',
+            width=2,
+            dash='dot'
+        ),
+        showlegend=False,
+        hoverinfo='skip'
+    ))
+
+    # Forecast line
+    fig.add_trace(go.Scatter(
+        x=fd,
+        y=fp,
+        mode='lines+markers',
+        name='7-Day Forecast',
+        line=dict(
+            color=c_fore,
+            width=4,
+            dash='dash',
+            shape='spline',
+            smoothing=1.1
+        ),
+        marker=dict(
+            size=9,
+            symbol='diamond',
+            color=c_fore,
+            line=dict(color='white', width=1)
+        ),
+        hovertemplate='<b>%{x|%b %d}</b><br>Forecast: EGP %{y:,.0f}<extra></extra>'
+    ))
+
+    # Confidence band
     upper = [p + mae for p in fp]
     lower = [max(0, p - mae) for p in fp]
-    fig.add_trace(go.Scatter(
-        x=fd + fd[::-1], y=upper + lower[::-1],
-        fill='toself', fillcolor='rgba(240,147,251,0.15)',
-        line=dict(color='rgba(0,0,0,0)'),
-        name='Confidence Band', hoverinfo='skip'))
 
+    fig.add_trace(go.Scatter(
+        x=fd + fd[::-1],
+        y=upper + lower[::-1],
+        fill='toself',
+        fillcolor=c_band,
+        line=dict(color='rgba(0,0,0,0)'),
+        name='Confidence Band',
+        hoverinfo='skip'
+    ))
+
+    # Today marker
     today_str = pd.Timestamp.today().strftime('%Y-%m-%d')
-    fig.add_shape(type="line", x0=today_str, x1=today_str, y0=0, y1=1,
-                  yref='paper', line=dict(color="#a0aec0", width=1.5, dash="dot"))
-    fig.add_annotation(x=today_str, y=1, yref='paper',
-                       text="Today", showarrow=False, yshift=10,
-                       font=dict(color="#718096", size=11))
+
+    fig.add_shape(
+        type="line",
+        x0=today_str,
+        x1=today_str,
+        y0=0,
+        y1=1,
+        yref='paper',
+        line=dict(
+            color='#000000',
+            width=1.5,
+            dash="dot"
+        )
+    )
+
+    fig.add_annotation(
+        x=today_str,
+        y=1,
+        yref='paper',
+        text="Today",
+        showarrow=False,
+        yshift=10,
+        font=dict(
+            color=c_text,
+            size=12,
+            family="Inter"
+        )
+    )
 
     fig.update_layout(
-        title="📊 Price History & 7-Day Forecast",
-        xaxis_title="Date", yaxis_title="Price (EGP)",
-        hovermode='x unified', plot_bgcolor='white',
-        paper_bgcolor='white', height=480,
-        legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1),
-        margin=dict(t=60))
+        title=dict(
+            text="📊 Price History & 7-Day Forecast",
+            font=dict(color=c_text, size=22, family="Inter"),
+            x=0.02
+        ),
+        xaxis_title="Date",
+        yaxis_title="Price (EGP)",
+        hovermode='x unified',
+        plot_bgcolor='white',
+        paper_bgcolor='white',
+        height=520,
+        legend=dict(
+            orientation='h',
+            yanchor='bottom',
+            y=1.02,
+            xanchor='right',
+            x=1,
+            font=dict(color=c_text, size=12)
+        ),
+        margin=dict(t=70, l=70, r=40, b=60),
+        font=dict(
+            color=c_text,
+            family="Inter"
+        ),
+        hoverlabel=dict(
+            bgcolor="white",
+            bordercolor="#2563eb",
+            font=dict(color="black", size=13)
+        )
+    )
+
+    fig.update_xaxes(
+        showgrid=True,
+        gridcolor=c_grid,
+        linecolor='#000000',
+        tickfont=dict(color=c_text),
+        title_font=dict(color=c_text),
+        zeroline=False
+    )
+
+    fig.update_yaxes(
+        showgrid=True,
+        gridcolor=c_grid,
+        linecolor='#000000',
+        tickfont=dict(color=c_text),
+        title_font=dict(color=c_text),
+        zeroline=False,
+        tickprefix="EGP "
+    )
+
     return fig
 
 
