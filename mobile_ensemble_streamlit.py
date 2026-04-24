@@ -131,11 +131,6 @@ def forecast_product(product_df, days_ahead=7, model=None):
         pdf['ram_gb'] = 8
     if 'storage_gb' not in pdf.columns:
         pdf['storage_gb'] = 128
-
-    pdf['date'] = pd.to_datetime(pdf['date'])
-    pdf['price'] = pd.to_numeric(pdf['price'], errors='coerce')
-    pdf = pdf.dropna(subset=['date', 'price']).copy()
-
     
     actual_last_price = float(pdf['price'].iloc[-1])
     last_date = pd.to_datetime(pdf['date'].iloc[-1])
@@ -181,7 +176,7 @@ def forecast_product(product_df, days_ahead=7, model=None):
 
     if len(pdf_fe) > 1:
         pdf_fe['target'] = pdf_fe['price'].shift(-1)
-        pdf_fe_val = pdf_fe.dropna(subset=['target'] + FEATURE_COLS)
+        pdf_fe_val = pdf_fe.dropna(subset=['target'])
 
         if len(pdf_fe_val) > 0:
             X_val = pdf_fe_val[FEATURE_COLS]
@@ -214,15 +209,6 @@ def forecast_product(product_df, days_ahead=7, model=None):
         'n_obs': len(pdf),
         'pdf': pdf
     }
-
-# ═══════════════════════════════════════════════════════════
-# COMPATIBILITY WRAPPER (OPTIONAL)
-# ══════════════════════════════════════════════════════════
-
-def load_and_preprocess_data(filepath='tablets'):
-    from supabase_loader import load_mobiles_from_supabase
-    return load_mobiles_from_supabase()
-
 # ═══════════════════════════════════════════════════════════
 # TRAINING FUNCTION (OPTIONAL - FOR RETRAINING)
 # ═══════════════════════════════════════════════════════════
