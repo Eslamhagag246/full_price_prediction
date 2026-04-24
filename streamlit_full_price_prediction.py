@@ -56,26 +56,28 @@ except ImportError:
     pass
 
 # ═══════════════════════════════════════════════════════════
-# CSS — clean professional theme
+# CSS — dark premium blue gradient theme
 # ═══════════════════════════════════════════════════════════
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 
 :root {
-    --bg: #f8fafc;
-    --surface: #ffffff;
-    --surface-soft: #f1f5f9;
-    --border: #e2e8f0;
-    --text: #0f172a;
-    --muted: #64748b;
-    --primary: #2563eb;
-    --primary-dark: #1d4ed8;
-    --secondary: #7c3aed;
-    --success: #16a34a;
-    --warning: #d97706;
-    --danger: #dc2626;
-    --info: #0891b2;
+    --bg1: #06121f;
+    --bg2: #0b1f38;
+    --bg3: #123761;
+    --surface: #0f1724;
+    --surface-2: #111c2d;
+    --surface-soft: #182638;
+    --border: rgba(255,255,255,0.10);
+    --text: #f8fafc;
+    --muted: #94a3b8;
+    --primary: #3b82f6;
+    --primary-dark: #2563eb;
+    --secondary: #60a5fa;
+    --success: #22c55e;
+    --warning: #f59e0b;
+    --danger: #ef4444;
 }
 
 * {
@@ -83,7 +85,11 @@ st.markdown("""
 }
 
 .stApp {
-    background: var(--bg);
+    background:
+        radial-gradient(circle at top left, rgba(59,130,246,0.18), transparent 28%),
+        radial-gradient(circle at top right, rgba(96,165,250,0.14), transparent 24%),
+        linear-gradient(135deg, var(--bg1) 0%, var(--bg2) 52%, var(--bg3) 100%);
+    color: var(--text);
 }
 
 /* Main page container */
@@ -113,7 +119,7 @@ p, label, span, div {
 
 /* Sidebar */
 section[data-testid="stSidebar"] {
-    background: #0f172a;
+    background: rgba(6,18,31,0.92);
     border-right: 1px solid rgba(255,255,255,0.08);
 }
 
@@ -128,7 +134,7 @@ section[data-testid="stSidebar"] span {
 
 section[data-testid="stSidebar"] .stRadio label,
 section[data-testid="stSidebar"] .stMarkdown {
-    color: #e2e8f0 !important;
+    color: #dbeafe !important;
 }
 
 section[data-testid="stSidebar"] hr {
@@ -139,7 +145,7 @@ section[data-testid="stSidebar"] hr {
 div[data-baseweb="select"] > div,
 .stTextInput input,
 .stDateInput input {
-    background: var(--surface) !important;
+    background: var(--surface-2) !important;
     border: 1px solid var(--border) !important;
     border-radius: 12px !important;
     color: var(--text) !important;
@@ -150,6 +156,10 @@ div[data-baseweb="select"] > div:hover,
 .stTextInput input:hover,
 .stDateInput input:hover {
     border-color: var(--primary) !important;
+}
+
+div[data-baseweb="select"] * {
+    color: var(--text) !important;
 }
 
 .stSelectbox label,
@@ -163,7 +173,7 @@ div[data-baseweb="select"] > div:hover,
 /* Tabs */
 .stTabs [data-baseweb="tab-list"] {
     gap: 0.35rem;
-    background: var(--surface);
+    background: rgba(15, 23, 36, 0.88);
     border: 1px solid var(--border);
     border-radius: 14px;
     padding: 0.35rem;
@@ -177,32 +187,31 @@ div[data-baseweb="select"] > div:hover,
 }
 
 .stTabs [aria-selected="true"] {
-    background: var(--primary) !important;
+    background: linear-gradient(135deg, #2563eb 0%, #60a5fa 100%) !important;
     color: #ffffff !important;
 }
 
 /* General buttons */
 .stButton > button {
-    background: var(--primary);
+    background: linear-gradient(135deg, #2563eb 0%, #60a5fa 100%);
     color: #ffffff;
-    border: 1px solid var(--primary);
+    border: 1px solid rgba(255,255,255,0.12);
     border-radius: 12px;
     padding: 0.55rem 1.6rem;
     font-weight: 700;
     transition: all 0.18s ease;
-    box-shadow: 0 6px 18px rgba(37, 99, 235, 0.16);
+    box-shadow: 0 8px 24px rgba(37, 99, 235, 0.26);
 }
 
 .stButton > button:hover {
-    background: var(--primary-dark);
-    border-color: var(--primary-dark);
     transform: translateY(-1px);
-    box-shadow: 0 10px 24px rgba(37, 99, 235, 0.22);
+    box-shadow: 0 12px 28px rgba(59, 130, 246, 0.36);
+    filter: brightness(1.04);
 }
 
 /* Status bar */
 .status-bar {
-    background: var(--surface);
+    background: rgba(15,23,36,0.82);
     border: 1px solid var(--border);
     border-radius: 16px;
     padding: 0.85rem 1.1rem;
@@ -211,7 +220,8 @@ div[data-baseweb="select"] > div:hover,
     align-items: center;
     margin: 1rem 0 1.5rem 0;
     flex-wrap: wrap;
-    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
+    box-shadow: 0 10px 28px rgba(0,0,0,0.18);
+    backdrop-filter: blur(10px);
 }
 
 .status-item {
@@ -225,12 +235,13 @@ div[data-baseweb="select"] > div:hover,
 
 /* Filter panel */
 .filter-section {
-    background: var(--surface);
+    background: rgba(15,23,36,0.82);
     border: 1px solid var(--border);
     border-radius: 18px;
     padding: 1.15rem 1.25rem;
     margin-bottom: 1rem;
-    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
+    box-shadow: 0 10px 28px rgba(0,0,0,0.18);
+    backdrop-filter: blur(10px);
 }
 
 /* Product badge */
@@ -242,45 +253,52 @@ div[data-baseweb="select"] > div:hover,
     font-size: 0.85rem;
     font-weight: 800;
     margin: 0.2rem;
-    background: #dbeafe;
-    color: #1e40af;
+    background: rgba(59,130,246,0.18);
+    color: #bfdbfe;
+    border: 1px solid rgba(96,165,250,0.22);
 }
 
 .badge-tablet {
-    background: #ede9fe;
-    color: #5b21b6;
+    background: rgba(96,165,250,0.18);
+    color: #dbeafe;
 }
 
 .badge-mobile {
-    background: #dbeafe;
-    color: #1e40af;
+    background: rgba(59,130,246,0.18);
+    color: #bfdbfe;
 }
 
-/* Stat cards */
+/* Cards */
 .price-card,
+.stat-card,
 .stat-card-hero,
 .stat-card-secondary {
-    background: var(--surface);
+    background: rgba(15,23,36,0.86);
     color: var(--text);
     padding: 1.25rem 1.4rem;
     border-radius: 18px;
     text-align: left;
     margin: 0.4rem 0;
     border: 1px solid var(--border);
-    box-shadow: 0 10px 28px rgba(15, 23, 42, 0.06);
+    box-shadow: 0 12px 30px rgba(0,0,0,0.18);
     min-height: 138px;
+    backdrop-filter: blur(10px);
 }
 
 .price-card {
     border-left: 5px solid var(--primary);
 }
 
+.stat-card {
+    border-left: 5px solid var(--primary);
+}
+
 .stat-card-hero {
-    border-left: 5px solid var(--secondary);
+    border-left: 5px solid #60a5fa;
 }
 
 .stat-card-secondary {
-    border-left: 5px solid #94a3b8;
+    border-left: 5px solid #475569;
 }
 
 .stat-label {
@@ -307,11 +325,11 @@ div[data-baseweb="select"] > div:hover,
 
 /* Streamlit metrics */
 div[data-testid="stMetric"] {
-    background: var(--surface);
+    background: rgba(15,23,36,0.86);
     border: 1px solid var(--border);
     border-radius: 16px;
     padding: 0.8rem 1rem;
-    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
+    box-shadow: 0 10px 28px rgba(0,0,0,0.18);
 }
 
 div[data-testid="stMetricLabel"] {
@@ -332,31 +350,32 @@ div[data-testid="stMetricValue"] {
     margin: 1.25rem 0;
     border: 1px solid var(--border);
     border-left: 5px solid;
-    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
+    box-shadow: 0 10px 28px rgba(0,0,0,0.18);
+    backdrop-filter: blur(10px);
 }
 
 .signal-buy {
-    background: #f0fdf4;
+    background: rgba(34, 197, 94, 0.12);
     border-left-color: var(--success);
-    color: #14532d;
+    color: #dcfce7;
 }
 
 .signal-wait {
-    background: #fffbeb;
+    background: rgba(245, 158, 11, 0.12);
     border-left-color: var(--warning);
-    color: #713f12;
+    color: #fef3c7;
 }
 
 .signal-hold {
-    background: #eff6ff;
+    background: rgba(59, 130, 246, 0.12);
     border-left-color: var(--primary);
-    color: #1e3a8a;
+    color: #dbeafe;
 }
 
 .signal-volatile {
-    background: #fef2f2;
+    background: rgba(239, 68, 68, 0.12);
     border-left-color: var(--danger);
-    color: #7f1d1d;
+    color: #fecaca;
 }
 
 .signal-title {
@@ -372,7 +391,7 @@ div[data-testid="stMetricValue"] {
 
 .signal-detail {
     font-size: 0.88rem;
-    opacity: 0.86;
+    opacity: 0.9;
 }
 
 /* Tables */
@@ -380,7 +399,7 @@ div[data-testid="stDataFrame"] {
     border-radius: 16px;
     overflow: hidden;
     border: 1px solid var(--border);
-    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
+    box-shadow: 0 10px 28px rgba(0,0,0,0.18);
 }
 
 /* Best Deal table */
@@ -392,12 +411,12 @@ div[data-testid="stDataFrame"] {
     overflow: hidden;
     border: 1px solid var(--border);
     border-radius: 16px;
-    background: var(--surface);
-    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
+    background: rgba(15,23,36,0.88);
+    box-shadow: 0 10px 28px rgba(0,0,0,0.18);
 }
 
 .deal-table th {
-    background: var(--surface-soft);
+    background: rgba(255,255,255,0.04);
     color: var(--text);
     font-size: 0.78rem;
     text-transform: uppercase;
@@ -409,7 +428,7 @@ div[data-testid="stDataFrame"] {
 
 .deal-table td {
     padding: 0.85rem 0.9rem;
-    border-bottom: 1px solid #edf2f7;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
     font-size: 0.94rem;
     color: var(--text);
 }
@@ -419,7 +438,7 @@ div[data-testid="stDataFrame"] {
 }
 
 .deal-table tr:first-child td {
-    background: #f0fdf4;
+    background: rgba(34,197,94,0.10);
     font-weight: 700;
 }
 
@@ -433,7 +452,7 @@ div[data-testid="stDataFrame"] {
 }
 
 .deal-link {
-    color: var(--primary);
+    color: #93c5fd;
     font-weight: 800;
     text-decoration: none;
 }
@@ -443,32 +462,31 @@ div[data-testid="stDataFrame"] {
 }
 
 .trend-up {
-    color: var(--danger);
+    color: #fca5a5;
     font-weight: 800;
 }
 
 .trend-down {
-    color: var(--success);
+    color: #86efac;
     font-weight: 800;
 }
 
 .trend-stable {
-    color: var(--warning);
+    color: #fcd34d;
     font-weight: 800;
 }
 
 /* Download button */
 .stDownloadButton > button {
-    background: #0f172a;
+    background: rgba(15,23,36,0.96);
     color: white;
     border-radius: 12px;
-    border: 1px solid #0f172a;
+    border: 1px solid var(--border);
     font-weight: 700;
 }
 
 .stDownloadButton > button:hover {
-    background: #1e293b;
-    border-color: #1e293b;
+    background: rgba(30,41,59,0.96);
 }
 
 /* Alerts */
@@ -477,12 +495,18 @@ div[data-testid="stAlert"] {
     border: 1px solid var(--border);
 }
 
-/* Chart cards spacing */
+/* Make generic Streamlit containers dark-friendly */
+[data-testid="stExpander"],
+[data-testid="stVerticalBlockBorderWrapper"] {
+    border-radius: 14px;
+}
+
 .js-plotly-plot {
     border-radius: 16px;
 }
 </style>
 """, unsafe_allow_html=True)
+
 
 
 # ═══════════════════════════════════════════════════════════
