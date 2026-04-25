@@ -1060,14 +1060,22 @@ with tab_forecast:
         """, unsafe_allow_html=True)
 
         # ── STAT CARDS ──────────────────────────────────────
-        # Compute richer current-price context
         avg_7d = result['pdf'].tail(7)['price'].mean()
         vs_avg = result['last_price'] - avg_7d
         vs_avg_pct = (vs_avg / avg_7d) * 100 if avg_7d else 0
 
-        change     = result['forecast_prices'][-1] - result['last_price']
-        change_pct = (change / result['last_price']) * 100
+        forecast_prices = list(result['forecast_prices'])
+        forecast_day_1 = forecast_prices[0]
+        forecast_day_7 = forecast_prices[-1]
+     
+        forecast_total_change = forecast_day_7 - forecast_day_1
+        forecast_total_change_pct = (forecast_total_change / forecast_day_1) * 100 if forecast_day_1 else 0
 
+        if len(forecast_prices) > 1:
+            forecast_constant_daily_change = forecast_total_change / (len(forecast_prices) - 1)
+        else:
+            forecast_constant_daily_change = 0
+            
         sc1, sc2, sc3, sc4 = st.columns(4)
 
         with sc1:
@@ -1075,7 +1083,6 @@ with tab_forecast:
             <div class="price-card">
                 <div class="stat-label">Current Price</div>
                 <div class="stat-value">EGP {result['last_price']:,.0f}</div>
-                <div class="stat-sub">{product_info['website'].upper()} · {result['n_obs']} records</div>
                 <div class="stat-sub">7d avg: EGP {avg_7d:,.0f}
                   ({vs_avg_pct:+.1f}% vs avg)</div>
             </div>""", unsafe_allow_html=True)
@@ -1084,19 +1091,20 @@ with tab_forecast:
             st.markdown(f"""
             <div class="stat-card-hero">
                 <div class="stat-label">Day-7 Forecast</div>
-                <div class="stat-value">EGP {result['forecast_prices'][-1]:,.0f}</div>
-                <div class="stat-sub">Tomorrow: EGP {result['forecast_prices'][0]:,.0f}</div>
+                <div class="stat-value">EGP {result['forecast_prices'][0]:,.0f}</div>
             </div>""", unsafe_allow_html=True)
 
         with sc3:
-            arrow = "▲" if change > 0 else ("▼" if change < 0 else "—")
+            arrow = "▲" if forecast_total_change > 0 else ("▼" if forecast_total_change < 0 else "—")
+        
             st.markdown(f"""
             <div class="stat-card-secondary">
                 <div class="stat-label">Expected 7-Day Change</div>
-                <div class="stat-value">{change:+,.0f} EGP</div>
-                <div class="stat-sub">{arrow} {change_pct:+.1f}% from current price</div>
+                <div class="stat-value">{forecast_total_change:+,.0f} EGP</div>
+                <div class="stat-sub">{arrow} {forecast_total_change_pct:+.1f}% from Day 1 forecast</div>
                 <div class="stat-sub" style="font-size:0.75rem;color:#718096;">
-                    Day 1→7 vs today's price</div>
+                    Constant daily change: {forecast_constant_daily_change:+,.0f} EGP/day
+                </div>
             </div>""", unsafe_allow_html=True)
 
         with sc4:
@@ -1105,7 +1113,6 @@ with tab_forecast:
                 <div class="stat-label">Confidence</div>
                 <div class="stat-value">{result['confidence']}</div>
                 <div class="stat-sub">MAE ±{result['mae']:,.0f} EGP</div>
-                <div class="stat-sub">{result['n_obs']} days tracked</div>
             </div>""", unsafe_allow_html=True)
 
         st.markdown("<br>", unsafe_allow_html=True)
