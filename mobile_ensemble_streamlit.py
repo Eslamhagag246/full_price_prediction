@@ -69,8 +69,8 @@ def engineer_features(pdf: pd.DataFrame, day_min: pd.Timestamp) -> pd.DataFrame:
 
 def build_models():
     model_lgb = LGBMRegressor(
-        n_estimators=1200,
-        max_depth=6,
+        n_estimators=500,
+        max_depth=4,
         learning_rate=0.03,
         subsample=0.9,
         colsample_bytree=0.9,
@@ -79,8 +79,8 @@ def build_models():
     )
 
     model_xgb = XGBRegressor(
-        n_estimators=1200,
-        max_depth=6,
+        n_estimators=500,
+        max_depth=4,
         learning_rate=0.03,
         subsample=0.9,
         colsample_bytree=0.9,
