@@ -1102,9 +1102,7 @@ with tab_forecast:
                 <div class="stat-label">Expected 7-Day Change</div>
                 <div class="stat-value">{forecast_total_change:+,.0f} EGP</div>
                 <div class="stat-sub">{arrow} {forecast_total_change_pct:+.1f}% from Day 1 forecast</div>
-                <div class="stat-sub" style="font-size:0.75rem;color:#718096;">
-                    Constant daily change: {forecast_constant_daily_change:+,.0f} EGP/day
-                </div>
+                <div class="stat-sub" style="font-size:0.75rem;color:#718096;"></div>
             </div>""", unsafe_allow_html=True)
 
         with sc4:
