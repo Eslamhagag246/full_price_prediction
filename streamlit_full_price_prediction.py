@@ -925,7 +925,7 @@ st.markdown("---")
 tab_forecast, tab_deal, tab_quality = st.tabs([
     "🔮 Price Forecast",
     "🎯 Best Deal Finder",
-    "🧹 Data Quality"
+    "🔥 Smart Deals"
 ])
 
 # ───────────────────────────────────────────────────────────
@@ -983,15 +983,12 @@ with tab_forecast:
 
     st.markdown("---")
 
-    # Generate forecasts
     results, product_infos = [], []
     for product_key in selected_products:
         product_df   = df[df['product_key'] == product_key].copy().sort_values('date').reset_index(drop=True)
         product_info = product_groups[product_groups['product_key'] == product_key].iloc[0]
         product_infos.append(product_info)
 
-        # Capture actual last price BEFORE calling model — guards the loop-clobber
-        # bug in both tablet and mobile models where last_price gets overwritten.
         actual_last_price = float(product_df['price'].iloc[-1])
 
         with st.spinner(f"🤖 Forecasting {product_info['name']}…"):
@@ -1357,150 +1354,222 @@ with tab_deal:
 
 
 # ───────────────────────────────────────────────────────────
-# TAB 3 — DATA QUALITY
+# TAB 3 — SMART DEALS
 # ───────────────────────────────────────────────────────────
-with tab_quality:
+with tab_smart_deals:
 
-    st.markdown("## 🧹 Data Quality Check")
-    st.markdown("Review products that may not be safe for forecasting yet.")
+    st.markdown("## 🔥 Smart Deals")
+    st.markdown("Find products that look like good buying opportunities based on recent price behavior.")
 
     if filtered_df.empty:
         st.warning("No products match the current filters.")
         st.stop()
 
-    quality_rows = []
-
-    latest_global_date = pd.to_datetime(filtered_df["date"]).max()
+    deals_rows = []
 
     for product_key in filtered_df["product_key"].unique():
         pdf = filtered_df[filtered_df["product_key"] == product_key].copy()
+
         pdf["date"] = pd.to_datetime(pdf["date"], errors="coerce")
         pdf["price"] = pd.to_numeric(pdf["price"], errors="coerce")
         pdf = pdf.dropna(subset=["date", "price"]).sort_values("date")
 
-        if pdf.empty:
+        if len(pdf) < 3:
             continue
 
-        product_name = pdf["name"].iloc[-1]
-        website = pdf["website"].iloc[-1].upper() if "website" in pdf.columns else "N/A"
-        category = pdf["category"].iloc[-1] if "category" in pdf.columns else ""
-        ram = pdf["ram_gb"].iloc[-1] if "ram_gb" in pdf.columns else ""
-        storage = pdf["storage_gb"].iloc[-1] if "storage_gb" in pdf.columns else ""
+        latest_row = pdf.iloc[-1]
 
-        records_count = len(pdf)
-        unique_days = pdf["date"].nunique()
-        first_date = pdf["date"].min()
-        last_date = pdf["date"].max()
-        current_price = float(pdf["price"].iloc[-1])
+        product_name = latest_row["name"]
+        website = latest_row["website"].upper()
+        brand = latest_row["brand"].title() if "brand" in pdf.columns else ""
+        ram = latest_row["ram_gb"] if "ram_gb" in pdf.columns else ""
+        storage = latest_row["storage_gb"] if "storage_gb" in pdf.columns else ""
+        url = latest_row.get("URL", "")
 
-        days_since_update = (latest_global_date - last_date).days if pd.notna(latest_global_date) else 0
-
-        # Missing days inside product's own tracked range
-        expected_days = pd.date_range(first_date, last_date, freq="D")
-        missing_days_count = len(set(expected_days.normalize()) - set(pdf["date"].dt.normalize()))
-
-        # Price movement checks
+        current_price = float(latest_row["price"])
         min_price = float(pdf["price"].min())
         max_price = float(pdf["price"].max())
         avg_price = float(pdf["price"].mean())
 
-        if min_price > 0:
-            range_pct = ((max_price - min_price) / min_price) * 100
-        else:
-            range_pct = 0
-
         last_7 = pdf.tail(7)
-        avg_7 = float(last_7["price"].mean()) if not last_7.empty else current_price
+        avg_7d = float(last_7["price"].mean()) if not last_7.empty else current_price
 
-        if avg_7 > 0:
-            current_vs_7d_avg_pct = ((current_price - avg_7) / avg_7) * 100
+        if avg_7d > 0:
+            vs_7d_avg_pct = ((current_price - avg_7d) / avg_7d) * 100
         else:
-            current_vs_7d_avg_pct = 0
+            vs_7d_avg_pct = 0
 
-        issues = []
-
-        if unique_days < 10:
-            issues.append("Less than 10 records")
-
-        if missing_days_count > 0:
-            issues.append(f"{missing_days_count} missing days")
-
-        if days_since_update > 2:
-            issues.append(f"Not updated for {days_since_update} days")
-
-        if range_pct > 60:
-            issues.append("High price range")
-
-        if abs(current_vs_7d_avg_pct) > 35:
-            issues.append("Current price far from 7-day avg")
-
-        if not issues:
-            status = "✅ Good"
-        elif unique_days < 10 or days_since_update > 5:
-            status = "🔴 Needs Review"
+        if min_price > 0:
+            vs_min_pct = ((current_price - min_price) / min_price) * 100
         else:
-            status = "🟡 Watch"
+            vs_min_pct = 0
 
-        quality_rows.append({
-            "Status": status,
+        if max_price > min_price:
+            position_pct = ((current_price - min_price) / (max_price - min_price)) * 100
+        else:
+            position_pct = 50
+
+        # Recommendation logic
+        if vs_7d_avg_pct <= -5:
+            deal_status = "🟢 Great Deal"
+            reason = f"{abs(vs_7d_avg_pct):.1f}% below 7-day average"
+            score = 95
+        elif position_pct <= 15:
+            deal_status = "🔥 Near Lowest"
+            reason = f"Only {vs_min_pct:.1f}% above historical low"
+            score = 88
+        elif vs_7d_avg_pct >= 8:
+            deal_status = "🔴 Overpriced"
+            reason = f"{vs_7d_avg_pct:.1f}% above 7-day average"
+            score = 30
+        elif position_pct >= 80:
+            deal_status = "🟠 High Price"
+            reason = "Current price is near historical high"
+            score = 45
+        else:
+            deal_status = "🟡 Fair Price"
+            reason = "Price is close to recent average"
+            score = 65
+
+        deals_rows.append({
+            "Status": deal_status,
             "Product": product_name,
+            "Brand": brand,
             "Website": website,
             "RAM": ram,
             "Storage": storage,
-            "Records": records_count,
-            "Unique Days": unique_days,
-            "Missing Days": missing_days_count,
-            "Last Date": last_date.strftime("%Y-%m-%d"),
-            "Current Price": f"EGP {current_price:,.0f}",
-            "Min Price": f"EGP {min_price:,.0f}",
-            "Max Price": f"EGP {max_price:,.0f}",
-            "Range %": f"{range_pct:.1f}%",
-            "Current vs 7D Avg": f"{current_vs_7d_avg_pct:+.1f}%",
-            "Issues": ", ".join(issues) if issues else "No major issue"
+            "Current Price": current_price,
+            "7D Avg": avg_7d,
+            "Historical Low": min_price,
+            "Historical High": max_price,
+            "vs 7D Avg": vs_7d_avg_pct,
+            "Price Position": position_pct,
+            "Reason": reason,
+            "Score": score,
+            "URL": url
         })
 
-    if not quality_rows:
-        st.warning("No quality rows available.")
+    if not deals_rows:
+        st.warning("Not enough price history to generate smart deals.")
         st.stop()
 
-    quality_df = pd.DataFrame(quality_rows)
+    deals_df = pd.DataFrame(deals_rows)
 
-    total_products = len(quality_df)
-    good_count = len(quality_df[quality_df["Status"] == "✅ Good"])
-    watch_count = len(quality_df[quality_df["Status"] == "🟡 Watch"])
-    review_count = len(quality_df[quality_df["Status"] == "🔴 Needs Review"])
+    # Summary cards
+    great_deals = len(deals_df[deals_df["Status"] == "🟢 Great Deal"])
+    near_lowest = len(deals_df[deals_df["Status"] == "🔥 Near Lowest"])
+    overpriced = len(deals_df[deals_df["Status"] == "🔴 Overpriced"])
+    fair_price = len(deals_df[deals_df["Status"] == "🟡 Fair Price"])
 
-    q1, q2, q3, q4 = st.columns(4)
+    c1, c2, c3, c4 = st.columns(4)
 
-    q1.metric("Total Products", f"{total_products:,}")
-    q2.metric("Good", f"{good_count:,}")
-    q3.metric("Watch", f"{watch_count:,}")
-    q4.metric("Needs Review", f"{review_count:,}")
+    c1.metric("🟢 Great Deals", great_deals)
+    c2.metric("🔥 Near Lowest", near_lowest)
+    c3.metric("🟡 Fair Prices", fair_price)
+    c4.metric("🔴 Overpriced", overpriced)
 
     st.markdown("---")
 
-    status_filter = st.selectbox(
-        "Filter by status",
-        ["All", "✅ Good", "🟡 Watch", "🔴 Needs Review"]
-    )
+    # Filters
+    f1, f2 = st.columns([1, 1])
 
-    display_df = quality_df.copy()
+    with f1:
+        status_filter = st.selectbox(
+            "Deal type",
+            ["All", "🟢 Great Deal", "🔥 Near Lowest", "🟡 Fair Price", "🟠 High Price", "🔴 Overpriced"]
+        )
+
+    with f2:
+        sort_by = st.selectbox(
+            "Sort by",
+            ["Best score", "Lowest current price", "Biggest drop vs 7D avg", "Near historical low"]
+        )
+
+    display_df = deals_df.copy()
 
     if status_filter != "All":
         display_df = display_df[display_df["Status"] == status_filter]
 
+    if sort_by == "Best score":
+        display_df = display_df.sort_values("Score", ascending=False)
+    elif sort_by == "Lowest current price":
+        display_df = display_df.sort_values("Current Price", ascending=True)
+    elif sort_by == "Biggest drop vs 7D avg":
+        display_df = display_df.sort_values("vs 7D Avg", ascending=True)
+    elif sort_by == "Near historical low":
+        display_df = display_df.sort_values("Price Position", ascending=True)
+
+    # Display clean table
+    table_df = display_df.copy()
+
+    table_df["Current Price"] = table_df["Current Price"].map(lambda x: f"EGP {x:,.0f}")
+    table_df["7D Avg"] = table_df["7D Avg"].map(lambda x: f"EGP {x:,.0f}")
+    table_df["Historical Low"] = table_df["Historical Low"].map(lambda x: f"EGP {x:,.0f}")
+    table_df["vs 7D Avg"] = table_df["vs 7D Avg"].map(lambda x: f"{x:+.1f}%")
+    table_df["Price Position"] = table_df["Price Position"].map(lambda x: f"{x:.0f}%")
+
+    show_cols = [
+        "Status",
+        "Product",
+        "Website",
+        "RAM",
+        "Storage",
+        "Current Price",
+        "7D Avg",
+        "Historical Low",
+        "vs 7D Avg",
+        "Reason"
+    ]
+
     st.dataframe(
-        display_df,
+        table_df[show_cols],
         use_container_width=True,
         hide_index=True
     )
 
-    csv_quality = quality_df.to_csv(index=False)
+    st.markdown("---")
+
+    # Top 10 chart
+    chart_df = display_df.head(10).copy()
+
+    if not chart_df.empty:
+        fig = go.Figure()
+
+        fig.add_trace(go.Bar(
+            x=chart_df["Product"],
+            y=chart_df["Current Price"],
+            text=[f"EGP {x:,.0f}" for x in chart_df["Current Price"]],
+            textposition="outside",
+            marker_color="#2563eb"
+        ))
+
+        fig.update_layout(
+            title="Top Smart Deals by Current Price",
+            xaxis_title="Product",
+            yaxis_title="Current Price (EGP)",
+            height=450,
+            plot_bgcolor="white",
+            paper_bgcolor="white",
+            font=dict(color="black"),
+            xaxis=dict(tickangle=-35),
+            margin=dict(t=60, b=140)
+        )
+
+        st.plotly_chart(fig, use_container_width=True)
+
+    # Download
+    export_df = deals_df.copy()
+    export_df["Current Price"] = export_df["Current Price"].round(2)
+    export_df["7D Avg"] = export_df["7D Avg"].round(2)
+    export_df["Historical Low"] = export_df["Historical Low"].round(2)
+    export_df["Historical High"] = export_df["Historical High"].round(2)
+    export_df["vs 7D Avg"] = export_df["vs 7D Avg"].round(2)
+    export_df["Price Position"] = export_df["Price Position"].round(2)
 
     st.download_button(
-        "📥 Download Data Quality Report",
-        data=csv_quality,
-        file_name=f"data_quality_report_{datetime.now():%Y%m%d}.csv",
+        "📥 Download Smart Deals Report",
+        data=export_df.to_csv(index=False),
+        file_name=f"smart_deals_{datetime.now():%Y%m%d}.csv",
         mime="text/csv"
     )
 
