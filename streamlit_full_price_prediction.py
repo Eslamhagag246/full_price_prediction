@@ -820,21 +820,6 @@ with st.sidebar:
 st.title("📱 Price Tracker Pro")
 st.markdown("**Track & Forecast Prices for Tablets & Mobile Phones in Egypt**")
 
-# ── TOP STATUS BAR ──────────────────────────────────────────
-if df is not None:
-    n_products  = df['product_key'].nunique() if 'product_key' in df.columns else len(df)
-    model_status = "✅ Loaded" if MODELS_LOADED[model_key] else "❌ Not loaded"
-    latest_date  = pd.to_datetime(df['date']).max().strftime('%b %d, %Y') if 'date' in df.columns else 'N/A'
-    st.markdown(f"""
-    <div class="status-bar">
-        <div class="status-item">🕐 <strong>Last refresh</strong> {datetime.now().strftime('%H:%M')}</div>
-        <div class="status-item">🗄️ <strong>Source</strong> {data_source}</div>
-        <div class="status-item">📦 <strong>Products loaded</strong> {n_products:,}</div>
-        <div class="status-item">🤖 <strong>Model</strong> {model_status}</div>
-        <div class="status-item">📅 <strong>Latest data</strong> {latest_date}</div>
-    </div>
-    """, unsafe_allow_html=True)
-
 st.markdown("---")
 
 # ═══════════════════════════════════════════════════════════
