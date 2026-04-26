@@ -945,9 +945,9 @@ with tab_forecast:
         filtered_df.groupby('product_key')
         .agg(name=('name','first'), brand=('brand','first'),
              website=('website','first'), ram_gb=('ram_gb','first'),
-             storage_gb=('storage_gb','first'))
+             storage_gb=('storage_gb','first'), n_obs=('price','count'))
         .reset_index()
-        .sort_values(['brand','name','ram_gb','storage_gb'])
+        .sort_values('n_obs', ascending=False)
     )
 
     compare_mode = st.checkbox("📊 Compare multiple products..", value=False)
@@ -977,7 +977,7 @@ with tab_forecast:
                     f"{pg_filtered.loc[pg_filtered['product_key']==x,'ram_gb'].values[0]}GB RAM  "
                     f"{pg_filtered.loc[pg_filtered['product_key']==x,'storage_gb'].values[0]}GB  ·  "
                     f"{pg_filtered.loc[pg_filtered['product_key']==x,'website'].values[0].upper()}  "
-                    f"({pg_filtered.loc[pg_filtered['product_key']==x,'n_obs'].values[0]} obs)"
+                    
                 ))
         selected_products = [selected_product]
 
