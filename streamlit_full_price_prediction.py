@@ -947,7 +947,7 @@ with tab_forecast:
              website=('website','first'), ram_gb=('ram_gb','first'),
              storage_gb=('storage_gb','first'), n_obs=('price','count'))
         .reset_index()
-        .sort_values( ascending=False)
+        .sort_values()
     )
 
     compare_mode = st.checkbox("📊 Compare multiple products..", value=False)
