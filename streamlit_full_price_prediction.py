@@ -914,7 +914,7 @@ if sel_rams:      filtered_df = filtered_df[filtered_df['ram_gb'].isin(sel_rams)
 if sel_storages:  filtered_df = filtered_df[filtered_df['storage_gb'].isin(sel_storages)]
 
 n_shown = filtered_df['product_key'].nunique() if 'product_key' in filtered_df.columns else len(filtered_df)
-st.caption(f"Showing **{n_shown}** products)
+st.caption(f"Showing **{n_shown}** products")
 st.markdown('</div>', unsafe_allow_html=True)
 
 st.markdown("---")
