@@ -922,10 +922,10 @@ st.markdown("---")
 # ═══════════════════════════════════════════════════════════
 # MAIN TABS  (replaces sidebar mode + back-button flow)
 # ═══════════════════════════════════════════════════════════
-tab_forecast, tab_deal, tab_insights = st.tabs([
+tab_forecast, tab_deal, tab_quality = st.tabs([
     "🔮 Price Forecast",
     "🎯 Best Deal Finder",
-    "📈 Market Insights"
+    "🧹 Data Quality"
 ])
 
 # ───────────────────────────────────────────────────────────
@@ -1357,49 +1357,152 @@ with tab_deal:
 
 
 # ───────────────────────────────────────────────────────────
-# TAB 3 — MARKET INSIGHTS
+# TAB 3 — DATA QUALITY
 # ───────────────────────────────────────────────────────────
-with tab_insights:
+with tab_quality:
 
-    st.markdown("## 📈 Market Insights")
-    st.markdown("Which products had the biggest price changes over the tracked period?")
+    st.markdown("## 🧹 Data Quality Check")
+    st.markdown("Review products that may not be safe for forecasting yet.")
 
-    changes = []
-    for pk in df['product_key'].unique():
-        pdf = df[df['product_key'] == pk].sort_values('date')
-        if len(pdf) < 2:
+    if filtered_df.empty:
+        st.warning("No products match the current filters.")
+        st.stop()
+
+    quality_rows = []
+
+    latest_global_date = pd.to_datetime(filtered_df["date"]).max()
+
+    for product_key in filtered_df["product_key"].unique():
+        pdf = filtered_df[filtered_df["product_key"] == product_key].copy()
+        pdf["date"] = pd.to_datetime(pdf["date"], errors="coerce")
+        pdf["price"] = pd.to_numeric(pdf["price"], errors="coerce")
+        pdf = pdf.dropna(subset=["date", "price"]).sort_values("date")
+
+        if pdf.empty:
             continue
-        fp, lp = float(pdf['price'].iloc[0]), float(pdf['price'].iloc[-1])
-        if fp > 0:
-            changes.append({
-                'Product':       pdf['name'].iloc[-1],
-                'Website':       pdf['website'].iloc[-1].upper() if 'website' in pdf.columns else 'N/A',
-                'Change %':      f"{((lp-fp)/fp*100):.1f}%",
-                'Current Price': f"EGP {int(lp):,}",
-                '_pct':          (lp - fp) / fp * 100
-            })
 
-    if not changes:
-        st.warning("Not enough data to calculate price changes.")
-    else:
-        ch_df = pd.DataFrame(changes)
-        ic1, ic2 = st.columns(2)
-        with ic1:
-            st.markdown("### 📉 Top Price Drops")
-            drops = ch_df[ch_df['_pct'] < 0].nsmallest(10, '_pct')
-            if not drops.empty:
-                st.dataframe(drops[['Product','Website','Change %','Current Price']],
-                             use_container_width=True, hide_index=True)
-            else:
-                st.info("No price drops detected.")
-        with ic2:
-            st.markdown("### 📈 Top Price Increases")
-            rises = ch_df[ch_df['_pct'] > 0].nlargest(10, '_pct')
-            if not rises.empty:
-                st.dataframe(rises[['Product','Website','Change %','Current Price']],
-                             use_container_width=True, hide_index=True)
-            else:
-                st.info("No price increases detected.")
+        product_name = pdf["name"].iloc[-1]
+        website = pdf["website"].iloc[-1].upper() if "website" in pdf.columns else "N/A"
+        category = pdf["category"].iloc[-1] if "category" in pdf.columns else ""
+        ram = pdf["ram_gb"].iloc[-1] if "ram_gb" in pdf.columns else ""
+        storage = pdf["storage_gb"].iloc[-1] if "storage_gb" in pdf.columns else ""
+
+        records_count = len(pdf)
+        unique_days = pdf["date"].nunique()
+        first_date = pdf["date"].min()
+        last_date = pdf["date"].max()
+        current_price = float(pdf["price"].iloc[-1])
+
+        days_since_update = (latest_global_date - last_date).days if pd.notna(latest_global_date) else 0
+
+        # Missing days inside product's own tracked range
+        expected_days = pd.date_range(first_date, last_date, freq="D")
+        missing_days_count = len(set(expected_days.normalize()) - set(pdf["date"].dt.normalize()))
+
+        # Price movement checks
+        min_price = float(pdf["price"].min())
+        max_price = float(pdf["price"].max())
+        avg_price = float(pdf["price"].mean())
+
+        if min_price > 0:
+            range_pct = ((max_price - min_price) / min_price) * 100
+        else:
+            range_pct = 0
+
+        last_7 = pdf.tail(7)
+        avg_7 = float(last_7["price"].mean()) if not last_7.empty else current_price
+
+        if avg_7 > 0:
+            current_vs_7d_avg_pct = ((current_price - avg_7) / avg_7) * 100
+        else:
+            current_vs_7d_avg_pct = 0
+
+        issues = []
+
+        if unique_days < 10:
+            issues.append("Less than 10 records")
+
+        if missing_days_count > 0:
+            issues.append(f"{missing_days_count} missing days")
+
+        if days_since_update > 2:
+            issues.append(f"Not updated for {days_since_update} days")
+
+        if range_pct > 60:
+            issues.append("High price range")
+
+        if abs(current_vs_7d_avg_pct) > 35:
+            issues.append("Current price far from 7-day avg")
+
+        if not issues:
+            status = "✅ Good"
+        elif unique_days < 10 or days_since_update > 5:
+            status = "🔴 Needs Review"
+        else:
+            status = "🟡 Watch"
+
+        quality_rows.append({
+            "Status": status,
+            "Product": product_name,
+            "Website": website,
+            "RAM": ram,
+            "Storage": storage,
+            "Records": records_count,
+            "Unique Days": unique_days,
+            "Missing Days": missing_days_count,
+            "Last Date": last_date.strftime("%Y-%m-%d"),
+            "Current Price": f"EGP {current_price:,.0f}",
+            "Min Price": f"EGP {min_price:,.0f}",
+            "Max Price": f"EGP {max_price:,.0f}",
+            "Range %": f"{range_pct:.1f}%",
+            "Current vs 7D Avg": f"{current_vs_7d_avg_pct:+.1f}%",
+            "Issues": ", ".join(issues) if issues else "No major issue"
+        })
+
+    if not quality_rows:
+        st.warning("No quality rows available.")
+        st.stop()
+
+    quality_df = pd.DataFrame(quality_rows)
+
+    total_products = len(quality_df)
+    good_count = len(quality_df[quality_df["Status"] == "✅ Good"])
+    watch_count = len(quality_df[quality_df["Status"] == "🟡 Watch"])
+    review_count = len(quality_df[quality_df["Status"] == "🔴 Needs Review"])
+
+    q1, q2, q3, q4 = st.columns(4)
+
+    q1.metric("Total Products", f"{total_products:,}")
+    q2.metric("Good", f"{good_count:,}")
+    q3.metric("Watch", f"{watch_count:,}")
+    q4.metric("Needs Review", f"{review_count:,}")
+
+    st.markdown("---")
+
+    status_filter = st.selectbox(
+        "Filter by status",
+        ["All", "✅ Good", "🟡 Watch", "🔴 Needs Review"]
+    )
+
+    display_df = quality_df.copy()
+
+    if status_filter != "All":
+        display_df = display_df[display_df["Status"] == status_filter]
+
+    st.dataframe(
+        display_df,
+        use_container_width=True,
+        hide_index=True
+    )
+
+    csv_quality = quality_df.to_csv(index=False)
+
+    st.download_button(
+        "📥 Download Data Quality Report",
+        data=csv_quality,
+        file_name=f"data_quality_report_{datetime.now():%Y%m%d}.csv",
+        mime="text/csv"
+    )
 
 # ═══════════════════════════════════════════════════════════
 # FOOTER
