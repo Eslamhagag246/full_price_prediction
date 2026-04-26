@@ -580,16 +580,15 @@ def create_forecast_chart(result, device_type, date_range=None):
     fp = result['forecast_prices']
     mae = result['mae']
 
-    # Premium graph colors
-    c_hist = '#2563eb'       # blue historical curved line
-    c_fore = '#0ea5e9'       # lighter blue forecast line
+    c_hist = '#2563eb'     
+    c_fore = '#0ea5e9'       
     c_band = 'rgba(14, 165, 233, 0.18)'
-    c_text = '#000000'       # black graph text
+    c_text = '#000000'       
     c_grid = 'rgba(0,0,0,0.12)'
 
     fig = go.Figure()
 
-    # Historical price line
+
     fig.add_trace(go.Scatter(
         x=pdf['date'],
         y=pdf['price'],
@@ -609,7 +608,6 @@ def create_forecast_chart(result, device_type, date_range=None):
         hovertemplate='<b>%{x|%b %d}</b><br>Price: EGP %{y:,.0f}<extra></extra>'
     ))
 
-    # Rolling average
     if 'rolling_avg_7' in pdf.columns:
         fig.add_trace(go.Scatter(
             x=pdf['date'],
@@ -627,7 +625,6 @@ def create_forecast_chart(result, device_type, date_range=None):
             hovertemplate='<b>%{x|%b %d}</b><br>Avg: EGP %{y:,.0f}<extra></extra>'
         ))
 
-    # Bridge line from last historical point to first forecast point
     fig.add_trace(go.Scatter(
         x=[pdf['date'].iloc[-1], fd[0]],
         y=[pdf['price'].iloc[-1], fp[0]],
@@ -816,19 +813,6 @@ with st.sidebar:
 
     if df is None:
         st.stop()
-
-    # Sidebar data summary
-    last_refresh = datetime.now().strftime("%H:%M:%S")
-    n_products = df['product_key'].nunique() if 'product_key' in df.columns else len(df)
-    st.markdown(f"""
-    <div style='font-size:0.82rem; opacity:0.9; line-height:1.8;'>
-    🗄️ <b>Source:</b> {data_source}<br>
-    📦 <b>Records:</b> {len(df):,}<br>
-    🏷️ <b>Products:</b> {n_products:,}<br>
-    🕐 <b>Loaded:</b> {last_refresh}
-    </div>
-    """, unsafe_allow_html=True)
-
 
 # ═══════════════════════════════════════════════════════════
 # HEADER
