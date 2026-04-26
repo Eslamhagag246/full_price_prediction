@@ -922,12 +922,11 @@ st.markdown("---")
 # ═══════════════════════════════════════════════════════════
 # MAIN TABS  (replaces sidebar mode + back-button flow)
 # ═══════════════════════════════════════════════════════════
-tab_forecast, tab_deal, tab_quality = st.tabs([
+tab_forecast, tab_deal, tab_smart_deals = st.tabs([
     "🔮 Price Forecast",
     "🎯 Best Deal Finder",
     "🔥 Smart Deals"
 ])
-
 # ───────────────────────────────────────────────────────────
 # TAB 1 — PRICE FORECAST
 # ───────────────────────────────────────────────────────────
@@ -1572,7 +1571,6 @@ with tab_smart_deals:
         file_name=f"smart_deals_{datetime.now():%Y%m%d}.csv",
         mime="text/csv"
     )
-
 # ═══════════════════════════════════════════════════════════
 # FOOTER
 # ═══════════════════════════════════════════════════════════
