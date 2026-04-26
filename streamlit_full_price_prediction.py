@@ -914,7 +914,7 @@ if sel_rams:      filtered_df = filtered_df[filtered_df['ram_gb'].isin(sel_rams)
 if sel_storages:  filtered_df = filtered_df[filtered_df['storage_gb'].isin(sel_storages)]
 
 n_shown = filtered_df['product_key'].nunique() if 'product_key' in filtered_df.columns else len(filtered_df)
-st.caption(f"Showing **{n_shown}** products  ·  {len(filtered_df):,} price records")
+st.caption(f"Showing **{n_shown}** products)
 st.markdown('</div>', unsafe_allow_html=True)
 
 st.markdown("---")
@@ -947,10 +947,10 @@ with tab_forecast:
              website=('website','first'), ram_gb=('ram_gb','first'),
              storage_gb=('storage_gb','first'), n_obs=('price','count'))
         .reset_index()
-        .sort_values('n_obs', ascending=False)
+        .sort_values( ascending=False)
     )
 
-    compare_mode = st.checkbox("📊 Compare multiple products (up to 3)", value=False)
+    compare_mode = st.checkbox("📊 Compare multiple products..", value=False)
 
     if compare_mode:
         selected_products = st.multiselect(
