@@ -616,11 +616,9 @@ def create_forecast_chart(result, device_type, date_range=None):
         ),
         hovertemplate='<b>%{x|%b %d}</b><br>Actual: EGP %{y:,.0f}<extra></extra>'
     ))
-
-   # ============================================================
-    # 2) Actual model prediction line over historical period
-    #    Uses ONLY real model output. No smooth fallback.
-    # ============================================================
+    #  Actual model prediction line over historical period
+    # Light orange dashed line.
+    # Uses ONLY real model output returned by forecast_product(
 
     model_pred = None
 
@@ -681,28 +679,7 @@ def create_forecast_chart(result, device_type, date_range=None):
             ),
             hovertemplate="<b>%{x|%b %d}</b><br>Model Prediction: EGP %{y:,.0f}<extra></extra>"
         ))
-
-    # ============================================================
-    # 3) Optional 7-day average line — starts from beginning too
-    # ============================================================
-    if 'rolling_avg_7' in pdf.columns:
-        fig.add_trace(go.Scatter(
-            x=pdf['date'],
-            y=pdf['rolling_avg_7'],
-            mode='lines',
-            name='7-Day Avg',
-            line=dict(
-                color='#1e40af',
-                width=2.5,
-                dash='dot',
-                shape='spline',
-                smoothing=1.1
-            ),
-            opacity=0.75,
-            hovertemplate='<b>%{x|%b %d}</b><br>Avg: EGP %{y:,.0f}<extra></extra>'
-        ))
-     model_pred = None
-
+        model_pred = None
     if "historical_predictions" in result:
         candidate = pd.to_numeric(pd.Series(result["historical_predictions"]), errors="coerce")
         if len(candidate) == len(result["pdf"]):
@@ -739,8 +716,28 @@ def create_forecast_chart(result, device_type, date_range=None):
                     smoothing=1.1
                 ),
                 hovertemplate="<b>%{x|%b %d}</b><br>Model Prediction: EGP %{y:,.0f}<extra></extra>"
-            ))    
+            ))
 
+    # ============================================================
+    # 3) Optional 7-day average line — starts from beginning too
+    # ============================================================
+    if 'rolling_avg_7' in pdf.columns:
+        fig.add_trace(go.Scatter(
+            x=pdf['date'],
+            y=pdf['rolling_avg_7'],
+            mode='lines',
+            name='7-Day Avg',
+            line=dict(
+                color='#1e40af',
+                width=2.5,
+                dash='dot',
+                shape='spline',
+                smoothing=1.1
+            ),
+            opacity=0.75,
+            hovertemplate='<b>%{x|%b %d}</b><br>Avg: EGP %{y:,.0f}<extra></extra>'
+        ))
+        
     # ============================================================
     # 4) Bridge line from last history point to first future forecast
     # ============================================================
