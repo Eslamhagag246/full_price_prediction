@@ -701,6 +701,45 @@ def create_forecast_chart(result, device_type, date_range=None):
             opacity=0.75,
             hovertemplate='<b>%{x|%b %d}</b><br>Avg: EGP %{y:,.0f}<extra></extra>'
         ))
+     model_pred = None
+
+    if "historical_predictions" in result:
+        candidate = pd.to_numeric(pd.Series(result["historical_predictions"]), errors="coerce")
+        if len(candidate) == len(result["pdf"]):
+            model_pred = candidate
+
+    if model_pred is None and "model_prediction" in result["pdf"].columns:
+        candidate = pd.to_numeric(result["pdf"]["model_prediction"], errors="coerce")
+        if len(candidate) == len(result["pdf"]):
+            model_pred = candidate
+
+    if model_pred is not None:
+        model_pred_df = result["pdf"].copy()
+        model_pred_df["date"] = pd.to_datetime(model_pred_df["date"], errors="coerce")
+        model_pred_df["model_pred"] = model_pred.values
+        model_pred_df = model_pred_df.dropna(subset=["date", "model_pred"]).sort_values("date")
+
+        if date_range:
+            model_pred_df = model_pred_df[
+                (model_pred_df["date"] >= s) &
+                (model_pred_df["date"] <= e)
+            ].copy()
+
+        if not model_pred_df.empty:
+            fig.add_trace(go.Scatter(
+                x=model_pred_df["date"],
+                y=model_pred_df["model_pred"],
+                mode="lines",
+                name="Model Prediction",
+                line=dict(
+                    color="rgba(249, 115, 22, 0.65)",
+                    width=2.5,
+                    dash="dash",
+                    shape="spline",
+                    smoothing=1.1
+                ),
+                hovertemplate="<b>%{x|%b %d}</b><br>Model Prediction: EGP %{y:,.0f}<extra></extra>"
+            ))    
 
     # ============================================================
     # 4) Bridge line from last history point to first future forecast
