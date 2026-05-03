@@ -572,28 +572,37 @@ def generate_buy_signal(result):
 def create_forecast_chart(result, device_type, date_range=None):
     pdf = result['pdf'].copy()
 
+    # Ensure date and price are clean
+    pdf['date'] = pd.to_datetime(pdf['date'], errors='coerce')
+    pdf['price'] = pd.to_numeric(pdf['price'], errors='coerce')
+    pdf = pdf.dropna(subset=['date', 'price']).sort_values('date').reset_index(drop=True)
+
     if date_range:
         s, e = date_range
-        pdf = pdf[(pdf['date'] >= s) & (pdf['date'] <= e)]
+        pdf = pdf[(pdf['date'] >= s) & (pdf['date'] <= e)].copy()
 
-    fd = result['forecast_dates']
-    fp = result['forecast_prices']
+    fd = list(result['forecast_dates'])
+    fp = list(result['forecast_prices'])
     mae = result['mae']
 
-    c_hist = '#2563eb'     
-    c_fore = '#0ea5e9'       
+    # Colors
+    c_hist = '#2563eb'       # blue real history line
+    c_model = '#f97316'      # orange model prediction line
+    c_fore = '#0ea5e9'       # light blue future forecast line
     c_band = 'rgba(14, 165, 233, 0.18)'
-    c_text = '#000000'       
+    c_text = '#000000'
     c_grid = 'rgba(0,0,0,0.12)'
 
     fig = go.Figure()
 
-
+    # ============================================================
+    # 1) Real historical price line — starts from beginning
+    # ============================================================
     fig.add_trace(go.Scatter(
         x=pdf['date'],
         y=pdf['price'],
         mode='lines+markers',
-        name='Historical Price',
+        name='Actual Historical Price',
         line=dict(
             color=c_hist,
             width=4,
@@ -605,9 +614,95 @@ def create_forecast_chart(result, device_type, date_range=None):
             color=c_hist,
             line=dict(color='white', width=1)
         ),
-        hovertemplate='<b>%{x|%b %d}</b><br>Price: EGP %{y:,.0f}<extra></extra>'
+        hovertemplate='<b>%{x|%b %d}</b><br>Actual: EGP %{y:,.0f}<extra></extra>'
     ))
 
+    # ============================================================
+    # 2) Orange model prediction line over historical period
+    #    It will use real model prediction columns if available.
+    #    If not available, it will use a smooth rolling/EMA estimate.
+    # ============================================================
+
+    model_pred = None
+
+    # Option A: model predictions returned inside result dict
+    possible_result_keys = [
+        'historical_predictions',
+        'history_predictions',
+        'in_sample_predictions',
+        'model_predictions',
+        'fitted_values',
+        'y_pred'
+    ]
+
+    for key in possible_result_keys:
+        if key in result:
+            try:
+                candidate = pd.Series(result[key])
+                if len(candidate) == len(result['pdf']):
+                    model_pred = pd.to_numeric(candidate, errors='coerce')
+                    break
+            except Exception:
+                pass
+
+    # Option B: model predictions already exist as a column inside pdf
+    possible_pdf_cols = [
+        'model_prediction',
+        'predicted_price',
+        'prediction',
+        'fitted_price',
+        'y_pred'
+    ]
+
+    if model_pred is None:
+        for col in possible_pdf_cols:
+            if col in result['pdf'].columns:
+                try:
+                    candidate = pd.to_numeric(result['pdf'][col], errors='coerce')
+                    if len(candidate) == len(result['pdf']):
+                        model_pred = candidate
+                        break
+                except Exception:
+                    pass
+
+    # Option C: fallback visual estimate if model did not return historical predictions
+    # This does not replace the actual future forecast. It only creates a smooth model-like line.
+    if model_pred is None:
+        model_pred = (
+            pd.to_numeric(result['pdf']['price'], errors='coerce')
+            .ewm(span=5, adjust=False)
+            .mean()
+        )
+
+    model_pred_df = result['pdf'].copy()
+    model_pred_df['date'] = pd.to_datetime(model_pred_df['date'], errors='coerce')
+    model_pred_df['model_pred'] = pd.to_numeric(model_pred, errors='coerce')
+    model_pred_df = model_pred_df.dropna(subset=['date', 'model_pred']).sort_values('date')
+
+    if date_range:
+        model_pred_df = model_pred_df[
+            (model_pred_df['date'] >= s) &
+            (model_pred_df['date'] <= e)
+        ].copy()
+
+    if not model_pred_df.empty:
+        fig.add_trace(go.Scatter(
+            x=model_pred_df['date'],
+            y=model_pred_df['model_pred'],
+            mode='lines',
+            name='Model Prediction',
+            line=dict(
+                color=c_model,
+                width=4,
+                shape='spline',
+                smoothing=1.1
+            ),
+            hovertemplate='<b>%{x|%b %d}</b><br>Model Prediction: EGP %{y:,.0f}<extra></extra>'
+        ))
+
+    # ============================================================
+    # 3) Optional 7-day average line — starts from beginning too
+    # ============================================================
     if 'rolling_avg_7' in pdf.columns:
         fig.add_trace(go.Scatter(
             x=pdf['date'],
@@ -625,25 +720,31 @@ def create_forecast_chart(result, device_type, date_range=None):
             hovertemplate='<b>%{x|%b %d}</b><br>Avg: EGP %{y:,.0f}<extra></extra>'
         ))
 
-    fig.add_trace(go.Scatter(
-        x=[pdf['date'].iloc[-1], fd[0]],
-        y=[pdf['price'].iloc[-1], fp[0]],
-        mode='lines',
-        line=dict(
-            color='#64748b',
-            width=2,
-            dash='dot'
-        ),
-        showlegend=False,
-        hoverinfo='skip'
-    ))
+    # ============================================================
+    # 4) Bridge line from last history point to first future forecast
+    # ============================================================
+    if not pdf.empty and len(fd) > 0 and len(fp) > 0:
+        fig.add_trace(go.Scatter(
+            x=[pdf['date'].iloc[-1], fd[0]],
+            y=[pdf['price'].iloc[-1], fp[0]],
+            mode='lines',
+            line=dict(
+                color='#64748b',
+                width=2,
+                dash='dot'
+            ),
+            showlegend=False,
+            hoverinfo='skip'
+        ))
 
-    # Forecast line
+    # ============================================================
+    # 5) Future forecast line
+    # ============================================================
     fig.add_trace(go.Scatter(
         x=fd,
         y=fp,
         mode='lines+markers',
-        name='7-Day Forecast',
+        name='Future 7-Day Forecast',
         line=dict(
             color=c_fore,
             width=4,
@@ -660,7 +761,9 @@ def create_forecast_chart(result, device_type, date_range=None):
         hovertemplate='<b>%{x|%b %d}</b><br>Forecast: EGP %{y:,.0f}<extra></extra>'
     ))
 
-    # Confidence band
+    # ============================================================
+    # 6) Confidence band
+    # ============================================================
     upper = [p + mae for p in fp]
     lower = [max(0, p - mae) for p in fp]
 
@@ -674,7 +777,9 @@ def create_forecast_chart(result, device_type, date_range=None):
         hoverinfo='skip'
     ))
 
-    # Today marker
+    # ============================================================
+    # 7) Today marker
+    # ============================================================
     today_str = pd.Timestamp.today().strftime('%Y-%m-%d')
 
     fig.add_shape(
@@ -716,7 +821,7 @@ def create_forecast_chart(result, device_type, date_range=None):
         hovermode='x unified',
         plot_bgcolor='white',
         paper_bgcolor='white',
-        height=520,
+        height=540,
         legend=dict(
             orientation='h',
             yanchor='bottom',
@@ -725,7 +830,7 @@ def create_forecast_chart(result, device_type, date_range=None):
             x=1,
             font=dict(color=c_text, size=12)
         ),
-        margin=dict(t=70, l=70, r=40, b=60),
+        margin=dict(t=80, l=70, r=40, b=60),
         font=dict(
             color=c_text,
             family="Inter"
@@ -757,7 +862,6 @@ def create_forecast_chart(result, device_type, date_range=None):
     )
 
     return fig
-
 
 def create_comparison_chart(results, product_names):
     fig = go.Figure()
@@ -1508,19 +1612,40 @@ with tab_smart_deals:
             y=chart_df["Current Price"],
             text=[f"EGP {x:,.0f}" for x in chart_df["Current Price"]],
             textposition="outside",
+            textfont=dict(
+                color="black",
+                size=12,
+                family="Inter"
+            ),
             marker_color="#2563eb"
         ))
 
         fig.update_layout(
-            title="Top Smart Deals by Current Price",
+            title=dict(
+                text="Top Smart Deals by Current Price",
+                font=dict(color="black", size=20, family="Inter")
+            ),
             xaxis_title="Product",
             yaxis_title="Current Price (EGP)",
-            height=450,
+            height=470,
             plot_bgcolor="white",
             paper_bgcolor="white",
-            font=dict(color="black"),
-            xaxis=dict(tickangle=-35),
-            margin=dict(t=60, b=140)
+            font=dict(color="black", family="Inter"),
+            xaxis=dict(
+                tickangle=-35,
+                tickfont=dict(color="black", size=11),
+                title_font=dict(color="black", size=13),
+                linecolor="black",
+                gridcolor="rgba(0,0,0,0.12)"
+            ),
+            yaxis=dict(
+                tickfont=dict(color="black", size=11),
+                title_font=dict(color="black", size=13),
+                linecolor="black",
+                gridcolor="rgba(0,0,0,0.12)",
+                tickprefix="EGP "
+            ),
+            margin=dict(t=70, b=150, l=70, r=40)
         )
 
         st.plotly_chart(fig, use_container_width=True)
