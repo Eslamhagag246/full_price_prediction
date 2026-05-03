@@ -616,77 +616,31 @@ def create_forecast_chart(result, device_type, date_range=None):
         ),
         hovertemplate='<b>%{x|%b %d}</b><br>Actual: EGP %{y:,.0f}<extra></extra>'
     ))
-    #  Actual model prediction line over historical period
-    # Light orange dashed line.
-    # Uses ONLY real model output returned by forecast_product(
+        # ============================================================
+    # 2) Actual model prediction line over historical period
+    #    Uses ONLY real model output returned by forecast_product().
+    #    One light orange dashed line only — no duplicate traces.
+    # ============================================================
 
     model_pred = None
 
-    possible_result_keys = [
-        "historical_predictions",
-        "in_sample_predictions",
-        "model_predictions",
-        "fitted_values",
-        "y_pred"
-    ]
-
-    for key in possible_result_keys:
-        if key in result:
-            candidate = pd.to_numeric(pd.Series(result[key]), errors="coerce")
-            if len(candidate) == len(result["pdf"]):
-                model_pred = candidate
-                break
-
-    possible_pdf_cols = [
-        "model_prediction",
-        "predicted_price",
-        "prediction",
-        "fitted_price",
-        "y_pred"
-    ]
-
-    if model_pred is None:
-        for col in possible_pdf_cols:
-            if col in result["pdf"].columns:
-                candidate = pd.to_numeric(result["pdf"][col], errors="coerce")
-                if len(candidate) == len(result["pdf"]):
-                    model_pred = candidate
-                    break
-
-    if model_pred is not None:
-        model_pred_df = result["pdf"].copy()
-        model_pred_df["date"] = pd.to_datetime(model_pred_df["date"], errors="coerce")
-        model_pred_df["model_pred"] = model_pred.values
-        model_pred_df = model_pred_df.dropna(subset=["date", "model_pred"]).sort_values("date")
-
-        if date_range:
-            model_pred_df = model_pred_df[
-                (model_pred_df["date"] >= s) &
-                (model_pred_df["date"] <= e)
-            ].copy()
-
-        fig.add_trace(go.Scatter(
-            x=model_pred_df["date"],
-            y=model_pred_df["model_pred"],
-            mode="lines",
-            name="Actual Model Prediction",
-            line=dict(
-                color="rgba(249, 115, 22, 0.65)",  # light orange
-                width=2.5,
-                dash="dash",
-                shape="spline",
-                smoothing=1.1
-            ),
-            hovertemplate="<b>%{x|%b %d}</b><br>Model Prediction: EGP %{y:,.0f}<extra></extra>"
-        ))
-        model_pred = None
+    # Prefer explicit historical predictions returned from forecast_product()
     if "historical_predictions" in result:
-        candidate = pd.to_numeric(pd.Series(result["historical_predictions"]), errors="coerce")
+        candidate = pd.to_numeric(
+            pd.Series(result["historical_predictions"]),
+            errors="coerce"
+        )
+
         if len(candidate) == len(result["pdf"]):
             model_pred = candidate
 
+    # Fallback only to the prediction column created by forecast_product()
     if model_pred is None and "model_prediction" in result["pdf"].columns:
-        candidate = pd.to_numeric(result["pdf"]["model_prediction"], errors="coerce")
+        candidate = pd.to_numeric(
+            result["pdf"]["model_prediction"],
+            errors="coerce"
+        )
+
         if len(candidate) == len(result["pdf"]):
             model_pred = candidate
 
@@ -694,7 +648,13 @@ def create_forecast_chart(result, device_type, date_range=None):
         model_pred_df = result["pdf"].copy()
         model_pred_df["date"] = pd.to_datetime(model_pred_df["date"], errors="coerce")
         model_pred_df["model_pred"] = model_pred.values
-        model_pred_df = model_pred_df.dropna(subset=["date", "model_pred"]).sort_values("date")
+
+        model_pred_df = (
+            model_pred_df
+            .dropna(subset=["date", "model_pred"])
+            .sort_values("date")
+            .reset_index(drop=True)
+        )
 
         if date_range:
             model_pred_df = model_pred_df[
@@ -706,16 +666,24 @@ def create_forecast_chart(result, device_type, date_range=None):
             fig.add_trace(go.Scatter(
                 x=model_pred_df["date"],
                 y=model_pred_df["model_pred"],
-                mode="lines",
-                name="Model Prediction",
+                mode="lines+markers",
+                name="Actual Model Prediction",
                 line=dict(
-                    color="rgba(249, 115, 22, 0.65)",
-                    width=2.5,
+                    color="rgba(249, 115, 22, 0.60)",  # light orange
+                    width=2.4,
                     dash="dash",
-                    shape="spline",
-                    smoothing=1.1
+                    shape="linear"  # important: matches exact numeric values better
                 ),
-                hovertemplate="<b>%{x|%b %d}</b><br>Model Prediction: EGP %{y:,.0f}<extra></extra>"
+                marker=dict(
+                    size=5,
+                    color="rgba(249, 115, 22, 0.85)",
+                    line=dict(color="white", width=1)
+                ),
+                hovertemplate=(
+                    "<b>%{x|%b %d}</b><br>"
+                    "Actual Model Prediction: EGP %{y:,.0f}"
+                    "<extra></extra>"
+                )
             ))
 
     # ============================================================
