@@ -538,36 +538,163 @@ def load_data(device_type):
 
 
 def generate_buy_signal(result):
-    last_price  = result['last_price']
-    future_price = result['forecast_prices'][-1]
-    change_pct   = ((future_price - last_price) / last_price) * 100
-    volatility_ratio = (result['mae'] / last_price) * 100
+    last_price = float(result["last_price"])
+    future_price = float(result["forecast_prices"][-1])
+    change_pct = ((future_price - last_price) / last_price) * 100 if last_price > 0 else 0
+    volatility_ratio = (float(result["mae"]) / last_price) * 100 if last_price > 0 else 0
 
-    if volatility_ratio > 10:
-        return dict(type="volatile", icon="⚠️", title="CAUTION — HIGH PRICE VOLATILITY",
-                    desc=f"Price fluctuations detected (±{volatility_ratio:.1f}%)",
-                    detail="Consider waiting for more stable pricing",
-                    confidence=result['confidence'], current=last_price,
-                    forecast=future_price, change_pct=change_pct)
-    elif change_pct < -3:
-        return dict(type="buy", icon="🟢", title="BUY SIGNAL",
-                    desc=f"Price expected to drop {abs(change_pct):.1f}% over the next 7 days",
-                    detail="Good opportunity to purchase now",
-                    confidence=result['confidence'], current=last_price,
-                    forecast=future_price, change_pct=change_pct)
-    elif change_pct > 3:
-        return dict(type="wait", icon="🔴", title="WAIT SIGNAL",
-                    desc=f"Price expected to rise {change_pct:.1f}% over the next 7 days",
-                    detail="Consider delaying your purchase",
-                    confidence=result['confidence'], current=last_price,
-                    forecast=future_price, change_pct=change_pct)
+    pdf = result["pdf"].copy()
+    pdf["price"] = pd.to_numeric(pdf["price"], errors="coerce")
+    pdf = pdf.dropna(subset=["price"]).copy()
+
+    if pdf.empty:
+        return dict(
+            type="hold",
+            icon="🟡",
+            title="INSUFFICIENT DATA",
+            desc="Not enough historical price data to make a strong recommendation.",
+            detail="Track more daily prices before relying on the buy/wait signal.",
+            confidence=result["confidence"],
+            current=last_price,
+            forecast=future_price,
+            change_pct=change_pct
+        )
+
+    historical_min = float(pdf["price"].min())
+    historical_max = float(pdf["price"].max())
+    historical_avg = float(pdf["price"].mean())
+
+    last_7 = pdf.tail(7)
+    avg_7d = float(last_7["price"].mean()) if not last_7.empty else historical_avg
+
+    current_vs_7d_avg_pct = ((last_price - avg_7d) / avg_7d) * 100 if avg_7d > 0 else 0
+    current_vs_avg_pct = ((last_price - historical_avg) / historical_avg) * 100 if historical_avg > 0 else 0
+
+    if historical_max > historical_min:
+        price_position_pct = ((last_price - historical_min) / (historical_max - historical_min)) * 100
     else:
-        return dict(type="hold", icon="🟡", title="HOLD / NEUTRAL",
-                    desc="Price expected to remain relatively stable",
-                    detail=f"Minor change expected: {change_pct:+.1f}% over 7 days",
-                    confidence=result['confidence'], current=last_price,
-                    forecast=future_price, change_pct=change_pct)
+        price_position_pct = 50
 
+    # ─────────────────────────────────────────────
+    # Decision logic
+    # ─────────────────────────────────────────────
+
+    # Very unstable product: be careful unless current price is clearly cheap
+    if volatility_ratio > 12 and price_position_pct > 25:
+        return dict(
+            type="volatile",
+            icon="⚠️",
+            title="CAUTION — HIGH PRICE VOLATILITY",
+            desc=f"Price is unstable with model error around ±{volatility_ratio:.1f}%.",
+            detail="Wait for more stable pricing unless you urgently need the product.",
+            confidence=result["confidence"],
+            current=last_price,
+            forecast=future_price,
+            change_pct=change_pct,
+            avg_7d=avg_7d,
+            historical_min=historical_min,
+            historical_avg=historical_avg,
+            price_position_pct=price_position_pct
+        )
+
+    # Strong buy: current price is cheaper than recent average or near historical low,
+    # and forecast is not expecting a clear drop.
+    if (current_vs_7d_avg_pct <= -5 or price_position_pct <= 20) and change_pct >= -2:
+        return dict(
+            type="buy",
+            icon="🟢",
+            title="BUY SIGNAL",
+            desc="Current price looks better than recent/historical prices.",
+            detail=(
+                f"Current price is {abs(current_vs_7d_avg_pct):.1f}% below 7-day average "
+                f"and price position is {price_position_pct:.1f}% from historical low."
+            ),
+            confidence=result["confidence"],
+            current=last_price,
+            forecast=future_price,
+            change_pct=change_pct,
+            avg_7d=avg_7d,
+            historical_min=historical_min,
+            historical_avg=historical_avg,
+            price_position_pct=price_position_pct
+        )
+
+    # Wait: model expects a clear future drop
+    if change_pct < -3:
+        return dict(
+            type="wait",
+            icon="🔴",
+            title="WAIT SIGNAL",
+            desc=f"Model expects price to drop about {abs(change_pct):.1f}% in the next 7 days.",
+            detail="Better to wait if you are not in a hurry.",
+            confidence=result["confidence"],
+            current=last_price,
+            forecast=future_price,
+            change_pct=change_pct,
+            avg_7d=avg_7d,
+            historical_min=historical_min,
+            historical_avg=historical_avg,
+            price_position_pct=price_position_pct
+        )
+
+    # Buy now: model expects price to rise and current price is not overpriced
+    if change_pct > 3 and price_position_pct < 70:
+        return dict(
+            type="buy",
+            icon="🟢",
+            title="BUY NOW",
+            desc=f"Model expects price to rise about {change_pct:.1f}% in the next 7 days.",
+            detail="Buying now may be better than waiting.",
+            confidence=result["confidence"],
+            current=last_price,
+            forecast=future_price,
+            change_pct=change_pct,
+            avg_7d=avg_7d,
+            historical_min=historical_min,
+            historical_avg=historical_avg,
+            price_position_pct=price_position_pct
+        )
+
+    # Overpriced: current price is high compared with history
+    if current_vs_7d_avg_pct >= 8 or price_position_pct >= 80:
+        return dict(
+            type="wait",
+            icon="🔴",
+            title="PRICE LOOKS HIGH",
+            desc="Current price is high compared with recent/historical records.",
+            detail=(
+                f"Current price is {current_vs_7d_avg_pct:+.1f}% vs 7-day average "
+                f"and near {price_position_pct:.1f}% of its historical range."
+            ),
+            confidence=result["confidence"],
+            current=last_price,
+            forecast=future_price,
+            change_pct=change_pct,
+            avg_7d=avg_7d,
+            historical_min=historical_min,
+            historical_avg=historical_avg,
+            price_position_pct=price_position_pct
+        )
+
+    # Otherwise neutral
+    return dict(
+        type="hold",
+        icon="🟡",
+        title="HOLD / NEUTRAL",
+        desc="Current price is close to its recent average.",
+        detail=(
+            f"7-day comparison: {current_vs_7d_avg_pct:+.1f}%. "
+            f"Forecast change: {change_pct:+.1f}%."
+        ),
+        confidence=result["confidence"],
+        current=last_price,
+        forecast=future_price,
+        change_pct=change_pct,
+        avg_7d=avg_7d,
+        historical_min=historical_min,
+        historical_avg=historical_avg,
+        price_position_pct=price_position_pct
+    )
 
 def create_forecast_chart(result, device_type, date_range=None):
     pdf = result['pdf'].copy()
