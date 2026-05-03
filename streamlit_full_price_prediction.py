@@ -617,87 +617,69 @@ def create_forecast_chart(result, device_type, date_range=None):
         hovertemplate='<b>%{x|%b %d}</b><br>Actual: EGP %{y:,.0f}<extra></extra>'
     ))
 
-    # ============================================================
-    # 2) Orange model prediction line over historical period
-    #    It will use real model prediction columns if available.
-    #    If not available, it will use a smooth rolling/EMA estimate.
+   # ============================================================
+    # 2) Actual model prediction line over historical period
+    #    Uses ONLY real model output. No smooth fallback.
     # ============================================================
 
     model_pred = None
 
-    # Option A: model predictions returned inside result dict
     possible_result_keys = [
-        'historical_predictions',
-        'history_predictions',
-        'in_sample_predictions',
-        'model_predictions',
-        'fitted_values',
-        'y_pred'
+        "historical_predictions",
+        "in_sample_predictions",
+        "model_predictions",
+        "fitted_values",
+        "y_pred"
     ]
 
     for key in possible_result_keys:
         if key in result:
-            try:
-                candidate = pd.Series(result[key])
-                if len(candidate) == len(result['pdf']):
-                    model_pred = pd.to_numeric(candidate, errors='coerce')
-                    break
-            except Exception:
-                pass
+            candidate = pd.to_numeric(pd.Series(result[key]), errors="coerce")
+            if len(candidate) == len(result["pdf"]):
+                model_pred = candidate
+                break
 
-    # Option B: model predictions already exist as a column inside pdf
     possible_pdf_cols = [
-        'model_prediction',
-        'predicted_price',
-        'prediction',
-        'fitted_price',
-        'y_pred'
+        "model_prediction",
+        "predicted_price",
+        "prediction",
+        "fitted_price",
+        "y_pred"
     ]
 
     if model_pred is None:
         for col in possible_pdf_cols:
-            if col in result['pdf'].columns:
-                try:
-                    candidate = pd.to_numeric(result['pdf'][col], errors='coerce')
-                    if len(candidate) == len(result['pdf']):
-                        model_pred = candidate
-                        break
-                except Exception:
-                    pass
+            if col in result["pdf"].columns:
+                candidate = pd.to_numeric(result["pdf"][col], errors="coerce")
+                if len(candidate) == len(result["pdf"]):
+                    model_pred = candidate
+                    break
 
-    # Option C: fallback visual estimate if model did not return historical predictions
-    # This does not replace the actual future forecast. It only creates a smooth model-like line.
-    if model_pred is None:
-        model_pred = (
-            pd.to_numeric(result['pdf']['price'], errors='coerce')
-            .ewm(span=5, adjust=False)
-            .mean()
-        )
+    if model_pred is not None:
+        model_pred_df = result["pdf"].copy()
+        model_pred_df["date"] = pd.to_datetime(model_pred_df["date"], errors="coerce")
+        model_pred_df["model_pred"] = model_pred.values
+        model_pred_df = model_pred_df.dropna(subset=["date", "model_pred"]).sort_values("date")
 
-    model_pred_df = result['pdf'].copy()
-    model_pred_df['date'] = pd.to_datetime(model_pred_df['date'], errors='coerce')
-    model_pred_df['model_pred'] = pd.to_numeric(model_pred, errors='coerce')
-    model_pred_df = model_pred_df.dropna(subset=['date', 'model_pred']).sort_values('date')
+        if date_range:
+            model_pred_df = model_pred_df[
+                (model_pred_df["date"] >= s) &
+                (model_pred_df["date"] <= e)
+            ].copy()
 
-    if date_range:
-        model_pred_df = model_pred_df[
-            (model_pred_df['date'] >= s) &
-            (model_pred_df['date'] <= e)
-        ].copy()
-
-    if not model_pred_df.empty:
         fig.add_trace(go.Scatter(
-            x=model_pred_df['date'],
-            y=model_pred_df['model_pred'],
-            mode='lines',
-            name='Model Prediction',
+            x=model_pred_df["date"],
+            y=model_pred_df["model_pred"],
+            mode="lines",
+            name="Actual Model Prediction",
             line=dict(
-                color=c_model,
-                width=4,
-                shape='spline',
+                color="rgba(249, 115, 22, 0.65)",  # light orange
+                width=2.5,
+                dash="dash",
+                shape="spline",
                 smoothing=1.1
             ),
-            hovertemplate='<b>%{x|%b %d}</b><br>Model Prediction: EGP %{y:,.0f}<extra></extra>'
+            hovertemplate="<b>%{x|%b %d}</b><br>Model Prediction: EGP %{y:,.0f}<extra></extra>"
         ))
 
     # ============================================================
