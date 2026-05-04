@@ -145,7 +145,9 @@ def forecast_product(product_df, days_ahead=7, model=None):
 
         pred_lgb = float(model_lgb.predict(X_pred)[0])
         pred_xgb = float(model_xgb.predict(X_pred)[0])
+        
         raw_pred = float(apply_weights(pred_lgb, pred_xgb, weights))
+        
         predicted_price = 0.7 * raw_pred + 0.3 * last_price
         
         max_change_pct = 0.03
