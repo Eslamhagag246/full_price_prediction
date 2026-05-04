@@ -689,8 +689,7 @@ def create_forecast_chart(result, device_type, date_range=None):
     mae = result['mae']
 
 
-    c_hist = '#2563eb'       
-    c_model = '#f97316'      
+    c_hist = '#2563eb'             
     c_fore = '#0ea5e9'       
     c_band = 'rgba(14, 165, 233, 0.18)'
     c_text = '#000000'
@@ -702,7 +701,7 @@ def create_forecast_chart(result, device_type, date_range=None):
         x=pdf['date'],
         y=pdf['price'],
         mode='lines+markers',
-        name='Actual Historical Price',
+        name='Historical Price',
         line=dict(
             color=c_hist,
             width=4,
@@ -716,66 +715,6 @@ def create_forecast_chart(result, device_type, date_range=None):
         ),
         hovertemplate='<b>%{x|%b %d}</b><br>Actual: EGP %{y:,.0f}<extra></extra>'
     ))
-
-    model_pred = None
-    if "historical_predictions" in result:
-        candidate = pd.to_numeric(
-            pd.Series(result["historical_predictions"]),
-            errors="coerce"
-        )
-
-        if len(candidate) == len(result["pdf"]):
-            model_pred = candidate
-    if model_pred is None and "model_prediction" in result["pdf"].columns:
-        candidate = pd.to_numeric(
-            result["pdf"]["model_prediction"],
-            errors="coerce"
-        )
-
-        if len(candidate) == len(result["pdf"]):
-            model_pred = candidate
-
-    if model_pred is not None:
-        model_pred_df = result["pdf"].copy()
-        model_pred_df["date"] = pd.to_datetime(model_pred_df["date"], errors="coerce")
-        model_pred_df["model_pred"] = model_pred.values
-
-        model_pred_df = (
-            model_pred_df
-            .dropna(subset=["date", "model_pred"])
-            .sort_values("date")
-            .reset_index(drop=True)
-        )
-
-        if date_range:
-            model_pred_df = model_pred_df[
-                (model_pred_df["date"] >= s) &
-                (model_pred_df["date"] <= e)
-            ].copy()
-
-        if not model_pred_df.empty:
-            fig.add_trace(go.Scatter(
-                x=model_pred_df["date"],
-                y=model_pred_df["model_pred"],
-                mode="lines+markers",
-                name="Actual Model Prediction",
-                line=dict(
-                    color="rgba(249, 115, 22, 0.60)", 
-                    width=2.4,
-                    dash="dash",
-                    shape="linear" 
-                ),
-                marker=dict(
-                    size=5,
-                    color="rgba(249, 115, 22, 0.85)",
-                    line=dict(color="white", width=1)
-                ),
-                hovertemplate=(
-                    "<b>%{x|%b %d}</b><br>"
-                    "Actual Model Prediction: EGP %{y:,.0f}"
-                    "<extra></extra>"
-                )
-            ))
 
     if 'rolling_avg_7' in pdf.columns:
         fig.add_trace(go.Scatter(
@@ -1446,13 +1385,15 @@ with tab_deal:
     # Bar chart
     sites_  = [r['website'] for r in all_sites]
     prices_ = [r['current_price'] for r in all_sites]
-    colors_ = ['#38a169'] + ['#667eea'] * (len(all_sites) - 1)
-
+    colors_ = ['#000000'] * len(all_sites)
+    
     fig_bar = go.Figure(go.Bar(
-        x=sites_, y=prices_,
+        x=sites_,
+        y=prices_,
         marker_color=colors_,
         text=[f"EGP {p:,.0f}" for p in prices_],
-        textposition='outside'))
+        textposition='outside'
+    ))
     fig_bar.update_layout(
         title="Price Comparison",
         xaxis_title="Website", yaxis_title="Price (EGP)",
