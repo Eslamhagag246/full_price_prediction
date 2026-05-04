@@ -1385,20 +1385,47 @@ with tab_deal:
     # Bar chart
     sites_  = [r['website'] for r in all_sites]
     prices_ = [r['current_price'] for r in all_sites]
-    colors_ = ['#000000'] * len(all_sites)
+    colors_ = ['#38a169'] + ['#667eea'] * (len(all_sites) - 1)
     
     fig_bar = go.Figure(go.Bar(
         x=sites_,
         y=prices_,
         marker_color=colors_,
         text=[f"EGP {p:,.0f}" for p in prices_],
-        textposition='outside'
+        textposition="outside",
+        textfont=dict(
+            color="black",
+            size=12,
+            family="Inter"
+        )
     ))
     fig_bar.update_layout(
-        title="Price Comparison",
-        xaxis_title="Website", yaxis_title="Price (EGP)",
-        height=380, plot_bgcolor='white', paper_bgcolor='white',
-        showlegend=False, margin=dict(t=50))
+        title=dict(
+            text="Price Comparison",
+            font=dict(color="black", size=20, family="Inter")
+        ),
+        xaxis_title="Website",
+        yaxis_title="Price (EGP)",
+        height=380,
+        plot_bgcolor="white",
+        paper_bgcolor="white",
+        showlegend=False,
+        margin=dict(t=50, l=70, r=40, b=60),
+        font=dict(color="black", family="Inter"),
+        xaxis=dict(
+            tickfont=dict(color="black", size=12),
+            title_font=dict(color="black", size=14),
+            linecolor="black",
+            gridcolor="rgba(0,0,0,0.12)"
+        ),
+        yaxis=dict(
+            tickfont=dict(color="black", size=12),
+            title_font=dict(color="black", size=14),
+            linecolor="black",
+            gridcolor="rgba(0,0,0,0.12)",
+            tickprefix="EGP "
+        )
+    )
     st.plotly_chart(fig_bar, use_container_width=True)
 
 
