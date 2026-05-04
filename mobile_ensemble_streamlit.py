@@ -100,48 +100,43 @@ def load_global_model():
 
 # FORECAST PRODUCT 
 def forecast_product(product_df, days_ahead=7, model=None):
-    if model is None:
-        model = load_global_model()
-
+    
     model_lgb = model["lightgbm"]
     model_xgb = model["xgboost"]
     weights = model["weights"]
     global_day_min = model["global_day_min"]
 
-    pdf = product_df.copy().sort_values("date")
+    pdf = product_df.copy().sort_values('date')
 
-    pdf["date"] = pd.to_datetime(pdf["date"])
-    pdf["price"] = pd.to_numeric(pdf["price"], errors="coerce")
-    pdf = pdf.dropna(subset=["date", "price"]).copy()
+    pdf['date'] = pd.to_datetime(pdf['date'])
+    pdf['price'] = pd.to_numeric(pdf['price'], errors='coerce')
+    pdf = pdf.dropna(subset=['date', 'price']).copy()
 
-    actual_last_price = float(pdf["price"].iloc[-1])
-    last_date = pd.to_datetime(pdf["date"].iloc[-1])
-    last_ram = float(pdf["ram_gb"].iloc[-1])
-    last_storage = float(pdf["storage_gb"].iloc[-1])
+    actual_last_price = float(pdf['price'].iloc[-1])
+    last_date = pd.to_datetime(pdf['date'].iloc[-1])
+    last_ram = float(pdf['ram_gb'].iloc[-1])
+    last_storage = float(pdf['storage_gb'].iloc[-1])
 
-    min_price = float(pdf["price"].min())
-    max_price = float(pdf["price"].max())
-    avg_price = float(pdf["price"].mean())
+    min_price = float(pdf['price'].min())
+    max_price = float(pdf['price'].max())
+    avg_price = float(pdf['price'].mean())
 
     pdf_fe = engineer_features(pdf.copy(), global_day_min)
-    pdf["rolling_avg_7"] = pdf_fe["rolling_avg_7"]
+    pdf['rolling_avg_7'] = pdf_fe['rolling_avg_7']
 
     forecast_prices = []
     forecast_dates = []
     context = pdf.tail(LOOKBACK).copy()
-
-    # use last real observed price as the anchor
     rolling_price = actual_last_price
 
     for i in range(1, days_ahead + 1):
         next_date = last_date + timedelta(days=i)
 
-        # use rolling_price, not actual_last_price, so recursion is natural
         new_row = pd.DataFrame({
-            "date": [next_date],
-            "price": [rolling_price],
-            "ram_gb": [last_ram],
-            "storage_gb": [last_storage]
+            'date': [next_date],
+            'price': [actual_last_price],
+            'ram_gb': [last_ram],
+            'storage_gb': [last_storage]
         })
 
         temp_df = pd.concat([context, new_row], ignore_index=True)
@@ -150,45 +145,22 @@ def forecast_product(product_df, days_ahead=7, model=None):
 
         pred_lgb = float(model_lgb.predict(X_pred)[0])
         pred_xgb = float(model_xgb.predict(X_pred)[0])
-        raw_pred = float(apply_weights(pred_lgb, pred_xgb, weights))
+        predicted_price = float(apply_weights(pred_lgb, pred_xgb, weights))
 
-        # smooth forecast so it connects more naturally with history
-        if i == 1:
-            alpha = 0.25   # first day: stay close to today's real price
-        else:
-            alpha = 0.45   # later days: allow more model effect
-
-        predicted_price = (alpha * raw_pred) + ((1 - alpha) * rolling_price)
-
-        # cap daily movement so the line does not jump unrealistically
-        max_change_pct = 0.02   # 2% daily cap
-        upper = rolling_price * (1 + max_change_pct)
-        lower = rolling_price * (1 - max_change_pct)
-        predicted_price = min(max(predicted_price, lower), upper)
-
-        # extra protection for day 1: keep it very near the last actual price
-        if i == 1:
-            first_day_cap = 0.015   # 1.5% from today's real price
-            upper_1 = actual_last_price * (1 + first_day_cap)
-            lower_1 = actual_last_price * (1 - first_day_cap)
-            predicted_price = min(max(predicted_price, lower_1), upper_1)
-
-        forecast_prices.append(float(predicted_price))
+        forecast_prices.append(predicted_price)
         forecast_dates.append(next_date)
 
-        new_row["price"] = float(predicted_price)
+        new_row['price'] = predicted_price
         context = pd.concat([context.iloc[1:], new_row], ignore_index=True)
-
-        # update rolling anchor for next day
-        rolling_price = float(predicted_price)
+        rolling_price = predicted_price 
 
     if len(pdf_fe) > 1:
-        pdf_fe["target"] = pdf_fe["price"].shift(-1)
-        pdf_fe_val = pdf_fe.dropna(subset=["target"] + FEATURE_COLS)
+        pdf_fe['target'] = pdf_fe['price'].shift(-1)
+        pdf_fe_val = pdf_fe.dropna(subset=['target'] + FEATURE_COLS)
 
         if len(pdf_fe_val) > 0:
             X_val = pdf_fe_val[FEATURE_COLS]
-            y_val = pdf_fe_val["target"]
+            y_val = pdf_fe_val['target']
             pred_lgb_val = model_lgb.predict(X_val)
             pred_xgb_val = model_xgb.predict(X_val)
             y_pred = apply_weights(pred_lgb_val, pred_xgb_val, weights)
@@ -206,16 +178,16 @@ def forecast_product(product_df, days_ahead=7, model=None):
         confidence = "Low"
 
     return {
-        "forecast_dates": forecast_dates,
-        "forecast_prices": forecast_prices,
-        "last_price": actual_last_price,
-        "min_price": min_price,
-        "max_price": max_price,
-        "avg_price": avg_price,
-        "mae": mae,
-        "confidence": confidence,
-        "n_obs": len(pdf),
-        "pdf": pdf
+        'forecast_dates': forecast_dates,
+        'forecast_prices': forecast_prices,
+        'last_price': actual_last_price,
+        'min_price': min_price,
+        'max_price': max_price,
+        'avg_price': avg_price,
+        'mae': mae,
+        'confidence': confidence,
+        'n_obs': len(pdf),
+        'pdf': pdf
     }
 # TRAINING FUNCTION 
 
