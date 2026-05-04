@@ -1295,7 +1295,7 @@ with tab_forecast:
 
 
 # TAB 2 — BEST DEAL FINDER
-
+with tab_deal:
     st.markdown("## 🎯 Best Deal Finder")
     st.markdown("Compare prices for the same product across all tracked websites.")
 
