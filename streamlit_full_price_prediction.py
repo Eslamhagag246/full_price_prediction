@@ -1203,7 +1203,6 @@ with tab_forecast:
             tbl_rows.append({
                 'Day':              day_label,
                 'Forecasted Price': f"EGP {p:,.0f}",
-                'vs Today':         f"{day_chg:+,.0f} EGP  ({day_chg/result['last_price']*100:+.1f}%)",
                 'Lower Bound':      f"EGP {max(0, p - result['mae']):,.0f}",
                 'Upper Bound':      f"EGP {p + result['mae']:,.0f}"
             })
