@@ -894,13 +894,6 @@ with st.sidebar:
     st.markdown("---")
 
     model_key = 'tablet' if device_type == "Tablets" else 'mobile'
-    if MODELS_LOADED[model_key]:
-        st.success(f"✅ {device_type} model ready")
-    else:
-        st.warning(f"⚠️ {device_type} model not loaded")
-
-    st.markdown("---")
-
     # Load data — all st.* calls here, OUTSIDE the cached function
     df, data_source, load_status, load_message = load_data(device_type)
 
@@ -1600,6 +1593,12 @@ with tab_smart_deals:
         table_df[show_cols],
         use_container_width=True,
         hide_index=True
+    )
+    st.download_button(
+        label="📥 Download Smart Deals Table CSV",
+        data=table_df[show_cols].to_csv(index=False),
+        file_name=f"smart_deals_table_{datetime.now():%Y%m%d}.csv",
+        mime="text/csv"
     )
 
     st.markdown("---")
