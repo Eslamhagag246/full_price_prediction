@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 from datetime import timedelta, datetime
-
+from voice_component import voice_command
 # PAGE CONFIG
 st.set_page_config(
     page_title="Price Tracker - Tablets & Mobiles",
@@ -888,11 +888,53 @@ with st.sidebar:
     st.markdown("---")
 
     st.markdown("### Device Category")
-    device_type = st.radio("Choose category:", options=["Tablets", "Mobile Phones"],
-                           index=0, label_visibility="collapsed")
+    if "device_type" not in st.session_state:
+        st.session_state["device_type"] = "Tablets"
+
+    device_type = st.radio(
+        "Choose category:",
+        options=["Tablets", "Mobile Phones"],
+        key="device_type",
+        label_visibility="collapsed"
+    )
 
     st.markdown("---")
+    st.markdown("---")
 
+with st.expander("🎙️ Voice Assistant", expanded=False):
+    voice_lang = st.selectbox(
+        "Voice language",
+        ["en-US", "ar-EG"],
+        index=0,
+        help="Use en-US for product names like iPhone/Samsung. Use ar-EG for Arabic commands."
+    )
+
+    voice_result = voice_command(
+        label="Say a command",
+        lang=voice_lang,
+        button_text="🎙️ Start listening",
+        stop_text="Stop",
+        key="voice_command"
+    )
+
+    if voice_result:
+        if voice_result.get("error"):
+            st.warning(f"Voice error: {voice_result['error']}")
+
+        transcript = voice_result.get("transcript", "").strip()
+        ts = voice_result.get("ts")
+
+        if transcript and st.session_state.get("last_voice_ts") != ts:
+            st.session_state["last_voice_ts"] = ts
+
+            st.write(f"🗣️ You said: **{transcript}**")
+
+            command = parse_voice_command(transcript)
+            apply_voice_command(command)
+
+    if "voice_message" in st.session_state:
+        st.info(st.session_state["voice_message"])
+        
     model_key = 'tablet' if device_type == "Tablets" else 'mobile'
     # Load data — all st.* calls here, OUTSIDE the cached function
     df, data_source, load_status, load_message = load_data(device_type)
@@ -907,7 +949,105 @@ with st.sidebar:
 
     if df is None:
         st.stop()
+def apply_voice_command(command: dict):
+    intent = command.get("intent")
 
+    if intent == "search":
+        st.session_state["filter_search"] = command.get("query", "")
+        st.session_state["voice_message"] = f"Searching for: {command.get('query', '')}"
+        st.rerun()
+
+    elif intent == "set_device":
+        st.session_state["device_type"] = command["device_type"]
+        st.session_state["voice_message"] = f"Changed device to: {command['device_type']}"
+        st.rerun()
+
+    elif intent == "clear_filters":
+        clear_all_filters()
+        st.session_state["voice_message"] = "Filters cleared"
+        st.rerun()
+
+    elif intent in ["show_best_deal", "show_smart_deals", "show_forecast"]:
+        # st.tabs cannot be changed reliably from Python.
+        # This gives the user a clear instruction.
+        page_name = {
+            "show_best_deal": "Best Deal Finder",
+            "show_smart_deals": "Smart Deals",
+            "show_forecast": "Price Forecast",
+        }[intent]
+        st.session_state["voice_message"] = f"Open the {page_name} tab."
+
+    elif intent == "unknown":
+        st.session_state["voice_message"] = f"I did not understand: {command.get('raw', '')}"
+
+    elif intent == "empty":
+        st.session_state["voice_message"] = "No command detected."
+# SIDEBAR
+with st.sidebar:
+    st.markdown("## 📱 Price Tracker Pro")
+    st.markdown("---")
+
+    st.markdown("### Device Category")
+    if "device_type" not in st.session_state:
+        st.session_state["device_type"] = "Tablets"
+
+    device_type = st.radio(
+        "Choose category:",
+        options=["Tablets", "Mobile Phones"],
+        key="device_type",
+        label_visibility="collapsed"
+    )
+
+    st.markdown("---")
+    st.markdown("---")
+
+with st.expander("🎙️ Voice Assistant", expanded=False):
+    voice_lang = st.selectbox(
+        "Voice language",
+        ["en-US", "ar-EG"],
+        index=0,
+        help="Use en-US for product names like iPhone/Samsung. Use ar-EG for Arabic commands."
+    )
+
+    voice_result = voice_command(
+        label="Say a command",
+        lang=voice_lang,
+        button_text="🎙️ Start listening",
+        stop_text="Stop",
+        key="voice_command"
+    )
+
+    if voice_result:
+        if voice_result.get("error"):
+            st.warning(f"Voice error: {voice_result['error']}")
+
+        transcript = voice_result.get("transcript", "").strip()
+        ts = voice_result.get("ts")
+
+        if transcript and st.session_state.get("last_voice_ts") != ts:
+            st.session_state["last_voice_ts"] = ts
+
+            st.write(f"🗣️ You said: **{transcript}**")
+
+            command = parse_voice_command(transcript)
+            apply_voice_command(command)
+
+    if "voice_message" in st.session_state:
+        st.info(st.session_state["voice_message"])
+    model_key = 'tablet' if device_type == "Tablets" else 'mobile'
+    # Load data — all st.* calls here, OUTSIDE the cached function
+    df, data_source, load_status, load_message = load_data(device_type)
+
+    if load_status == "error":
+        st.error(load_message)
+        st.stop()
+    elif load_status == "exception":
+        st.error(f"❌ {load_message.splitlines()[0]}")
+        st.code(load_message)
+        st.stop()
+
+    if df is None:
+        st.stop()
 # HEADER
 st.title("📱 Price Tracker Pro")
 st.markdown("**Track & Forecast Prices for Tablets & Mobile Phones in Egypt**")
