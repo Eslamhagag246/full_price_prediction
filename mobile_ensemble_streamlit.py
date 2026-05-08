@@ -189,6 +189,7 @@ def forecast_product(product_df, days_ahead=7, model=None):
         'n_obs': len(pdf),
         'pdf': pdf
     }
+
 # TRAINING FUNCTION 
 
 def train_global_model():
@@ -200,6 +201,45 @@ def train_global_model():
 
     supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
+    # OPTIMIZER
+    def optimize_ensemble_weights(y_true, pred_lgb, pred_xgb, coarse_step=0.05, fine_step=0.01):
+        y_true = np.asarray(y_true)
+        pred_lgb = np.asarray(pred_lgb)
+        pred_xgb = np.asarray(pred_xgb)
+
+        def evaluate(weights):
+            preds = weights[0] * pred_lgb + weights[1] * pred_xgb
+            return mean_absolute_error(y_true, preds)
+
+        best_weights = np.array([0.5, 0.5])
+        best_mae = evaluate(best_weights)
+
+        # coarse search
+        for w in np.arange(0, 1.01, coarse_step):
+            weights = np.array([w, 1 - w])
+            mae = evaluate(weights)
+            if mae < best_mae:
+                best_mae = mae
+                best_weights = weights
+
+        # fine search
+        w0 = best_weights[0]
+        for w in np.arange(max(0, w0 - coarse_step), min(1, w0 + coarse_step), fine_step):
+            weights = np.array([w, 1 - w])
+            mae = evaluate(weights)
+            if mae < best_mae:
+                best_mae = mae
+                best_weights = weights
+
+        best_weights = best_weights / best_weights.sum()
+
+        return {
+            'lightgbm': float(best_weights[0]),
+            'xgboost': float(best_weights[1]),
+            'validation_mae': float(best_mae),
+        }
+
+    # DATA LOADING
     def fetch_all(table_name):
         all_data, offset, limit = [], 0, 1000
         while True:
@@ -235,12 +275,13 @@ def train_global_model():
         df['product_key'] = (
             df['name'].str.lower().fillna('unknown') + '_' +
             df['ram_gb'].astype(str) + '_' +
-            df['storage_gb'].astype(str)
+            df['storage_gb'].astype(str) + '_' +
+            df['website'].astype(str)
         )
 
         return (
             df.groupby(['product_key', 'date'])
-            .agg({'price': 'mean', 'ram_gb': 'first', 'storage_gb': 'first'})
+            .agg({'price': 'mean', 'ram_gb': 'first', 'storage_gb': 'first', 'website': 'first'})
             .reset_index()
             .sort_values(['product_key', 'date'])
         )
@@ -258,13 +299,8 @@ def train_global_model():
             'r2': float(r2_score(y_true, y_pred)),
         }
 
-    # Fixed weights
-    weights = {
-        'lightgbm': 0.85,
-        'xgboost': 0.15,
-    }
-
-    print("📊 Loading mobile data from Supabase...")
+    # LOAD DATA
+    print(" Loading mobile data from Supabase...")
     df = add_targets_train(load_training_data())
 
     day_min = df['date'].min()
@@ -272,35 +308,64 @@ def train_global_model():
     train_fe = engineer_features(df.copy(), day_min)
     train_fe = train_fe.dropna(subset=FEATURE_COLS + ['target'])
 
-    X_train = train_fe[FEATURE_COLS]
-    y_train = train_fe['target']
+    # TIME SPLIT 
+    split_date = train_fe['date'].quantile(0.8)
 
-    print(" Training final deployment model on full dataset...")
+    train_data = train_fe[train_fe['date'] <= split_date]
+    val_data   = train_fe[train_fe['date'] > split_date]
+
+    X_train, y_train = train_data[FEATURE_COLS], train_data['target']
+    X_val, y_val     = val_data[FEATURE_COLS], val_data['target']
+
+    # TRAIN BASE MODELS
+    print(" Training models for weight optimization...")
     model_lgb, model_xgb = build_models()
+
     model_lgb.fit(X_train, y_train)
     model_xgb.fit(X_train, y_train)
 
-    pred_lgb_train = model_lgb.predict(X_train)
-    pred_xgb_train = model_xgb.predict(X_train)
-    y_train_pred = apply_weights(pred_lgb_train, pred_xgb_train, weights)
+    # VALIDATION PREDICTIONS
+    pred_lgb_val = model_lgb.predict(X_val)
+    pred_xgb_val = model_xgb.predict(X_val)
 
-    train_metrics = compute_metrics(y_train, y_train_pred)
+    # OPTIMIZE WEIGHTS 
+    print(" Optimizing ensemble weights...")
+    weights = optimize_ensemble_weights(y_val, pred_lgb_val, pred_xgb_val)
 
+    print(f" Best Weights: {weights}")
+
+    # FINAL TRAIN ON FULL DATA
+    print(" Training final deployment model on full dataset...")
+    model_lgb_final, model_xgb_final = build_models()   # جديد خالص
+    model_lgb_final.fit(train_fe[FEATURE_COLS], train_fe['target'])
+    model_xgb_final.fit(train_fe[FEATURE_COLS], train_fe['target'])
+
+    pred_lgb_train = model_lgb_final.predict(train_fe[FEATURE_COLS])
+    pred_xgb_train = model_xgb_final.predict(train_fe[FEATURE_COLS])
+
+    y_train_pred = (
+        weights['lightgbm'] * pred_lgb_train +
+        weights['xgboost'] * pred_xgb_train
+    )
+
+    train_metrics = compute_metrics(train_fe['target'], y_train_pred)
+
+    # SAVE MODEL
     artifact = {
-        "lightgbm": model_lgb,
-        "xgboost": model_xgb,
+        "lightgbm": model_lgb_final,
+        "xgboost": model_xgb_final,
         "weights": weights,
         "feature_cols": FEATURE_COLS,
         "global_day_min": day_min,
         "last_train_date": df['date'].max(),
         "mode": "final_deployment"
     }
+
     joblib.dump(artifact, MODEL_PATH)
 
     print("\n" + "=" * 60)
     print(" MOBILE ENSEMBLE FINAL DEPLOYMENT MODEL")
     print("=" * 60)
-    print("Training used: FULL AVAILABLE DATASET")
     print(f"Train MAE     : {train_metrics['mae']:,.2f}")
     print(f"Train RMSE    : {train_metrics['rmse']:,.2f}")
     print(f"Train R²      : {train_metrics['r2']:.4f}")
@@ -309,7 +374,6 @@ def train_global_model():
     print(f"💾 Saved model: {MODEL_PATH}")
 
     return artifact
-
 # MAIN 
 if __name__ == "__main__":
     print("=" * 60)
