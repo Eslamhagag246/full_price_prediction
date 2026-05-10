@@ -12,11 +12,59 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# IMPORT MODELS & LOADERS
-MODELS_LOADED = {'tablet': False, 'mobile': False}
-tablet_model = None
-mobile_model = None
-
+@st.cache_resource(ttl=86400)
+def load_all_models():
+    result = {
+        "tablet_model":          None,
+        "mobile_model":          None,
+        "tablet_ok":             False,
+        "mobile_ok":             False,
+        "last_trained":          datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "forecast_tablet_func":  None,
+        "forecast_mobile_func":  None,
+    }
+ 
+    # Tablet
+    try:
+        from tablet_ensemble_streamlit import (
+            train_global_model as train_tablet_model,
+            load_global_model  as load_tablet_model,
+            forecast_product   as forecast_tablet_func,
+        )
+        train_tablet_model()
+        result["tablet_model"]         = load_tablet_model()
+        result["tablet_ok"]            = True
+        result["forecast_tablet_func"] = forecast_tablet_func
+    except Exception as e:
+        st.warning(f"Tablet model error: {e}")
+ 
+    # Mobile
+    try:
+        from mobile_ensemble_streamlit import (
+            train_global_model as train_mobile_model,
+            load_global_model  as load_mobile_model,
+            forecast_product   as forecast_mobile_func,
+        )
+        train_mobile_model()
+        result["mobile_model"]         = load_mobile_model()
+        result["mobile_ok"]            = True
+        result["forecast_mobile_func"] = forecast_mobile_func
+    except Exception as e:
+        st.warning(f"Mobile model error: {e}")
+ 
+    return result
+ 
+# Load (or reuse cached) models
+_models = load_all_models()
+ 
+tablet_model         = _models["tablet_model"]
+mobile_model         = _models["mobile_model"]
+forecast_tablet_func = _models["forecast_tablet_func"]
+forecast_mobile_func = _models["forecast_mobile_func"]
+MODELS_LOADED        = {"tablet": _models["tablet_ok"], "mobile": _models["mobile_ok"]}
+_last_trained        = _models["last_trained"]
+ 
+# IMPORT SUPABASE LOADER
 try:
     from supabase_loader import (
         load_tablets_from_supabase,
@@ -24,32 +72,8 @@ try:
         get_product_recommendation)
     SUPABASE_AVAILABLE = True
 except ImportError as e:
-    st.error(f"❌ Error importing supabase_loader.py: {str(e)}")
+    st.error(f"Error importing supabase_loader.py: {str(e)}")
     SUPABASE_AVAILABLE = False
-
-try:
-    from tablet_ensemble_streamlit import (
-        forecast_product as forecast_tablet_func,
-        load_global_model as load_tablet_model)
-    try:
-        tablet_model = load_tablet_model()
-        MODELS_LOADED['tablet'] = True
-    except Exception:
-        pass
-except ImportError:
-    pass
-
-try:
-    from mobile_ensemble_streamlit import (
-        forecast_product as forecast_mobile_func,
-        load_global_model as load_mobile_model)
-    try:
-        mobile_model = load_mobile_model()
-        MODELS_LOADED['mobile'] = True
-    except Exception:
-        pass
-except ImportError:
-    pass
 
 # CSS — dark premium blue gradient theme
 st.markdown("""
