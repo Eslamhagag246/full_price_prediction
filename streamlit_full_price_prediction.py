@@ -12,7 +12,6 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-@st.cache_resource(ttl=86400)
 # IMPORT MODELS & LOADERS
 MODELS_LOADED = {'tablet': False, 'mobile': False}
 tablet_model = None
