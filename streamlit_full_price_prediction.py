@@ -863,10 +863,30 @@ def create_comparison_chart(results, product_names):
             mode='lines+markers', name=f"{name} (Forecast)",
             line=dict(color=c, width=2, dash='dash'),
             marker=dict(size=6, symbol='diamond')))
-    fig.update_layout(title="Product Price Comparison",
-        xaxis_title="Date", yaxis_title="Price (EGP)",
-        height=550, hovermode='x unified', plot_bgcolor='white',
-        paper_bgcolor='white')
+    fig.update_layout(
+        title=dict(text="Product Price Comparison", font=dict(color='black', size=20)),
+        xaxis_title="Date",
+        yaxis_title="Price (EGP)",
+        height=550,
+        hovermode='x unified',
+        plot_bgcolor='white',
+        paper_bgcolor='white',
+        font=dict(color='black', family='Inter'),
+        xaxis=dict(
+            title_font=dict(color='black'),
+            tickfont=dict(color='black'),
+            linecolor='black',
+            gridcolor='rgba(0,0,0,0.10)',
+        ),
+        yaxis=dict(
+            title_font=dict(color='black'),
+            tickfont=dict(color='black'),
+            linecolor='black',
+            gridcolor='rgba(0,0,0,0.10)',
+            tickprefix='EGP ',
+        ),
+        legend=dict(font=dict(color='black')),
+    )
     return fig
 
 # SIDEBAR
@@ -1056,10 +1076,25 @@ with tab_forecast:
                 'Expected 7-Day Δ': f"{chg_pct:+.1f}%",
                 'Confidence':       res['confidence']
             })
+        st.markdown("""
+        <style>
+        /* Comparison table — force black text on white background */
+        div[data-testid="stDataFrame"][data-comparison-table] iframe,
+        .comparison-table-wrapper div[data-testid="stDataFrame"] * {
+            color: black !important;
+        }
+        .comparison-table-wrapper div[data-testid="stDataFrame"] {
+            background: white !important;
+            border-radius: 16px;
+        }
+        </style>
+        <div class="comparison-table-wrapper">
+        """, unsafe_allow_html=True)
         st.dataframe(pd.DataFrame(comp_rows), use_container_width=True, hide_index=True)
+        st.markdown("</div>", unsafe_allow_html=True)
         st.plotly_chart(create_comparison_chart(results, [i['name'] for i in product_infos]),
                         use_container_width=True)
-
+ 
     #  SINGLE PRODUCT
     else:
         result = results[0]
